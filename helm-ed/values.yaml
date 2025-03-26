@@ -1,0 +1,513 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+# Default values for hdeu-hub-repo.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: code.europa.eu:4567/healthdataeu-private/healthdataeu-eu-dataset-catalogue/hdeu-hub-repo
+  ## Specify a imagePullPolicy
+  ## ref: http://kubernetes.io/docs/concepts/containers/images/#pre-pulled-images
+  ##
+  pullPolicy: Always
+  ## Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+# imagePullSecrets:
+#   - name: regcred
+nameOverride: ""
+fullnameOverride: ""
+
+## HDEU Hub Repo Service Account
+## ref: https://kubernetes.io/docs/concepts/security/service-accounts/
+## @param serviceAccount.create Specifies whether a service account should be created
+## @param serviceAccount.annotations Annotations to add to the service account
+## @param serviceAccount.name The name of the service account to use.
+## If not set and create is true, a name is generated using the fullname template
+##
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+## @param podAnnotations Annotations for hdeu-hub-repo pod
+## ref: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+##
+podAnnotations: {}
+
+## Pod Security Context Configuration
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+## @param podSecurityContext.fsGroup The group ID associated with mounted volumes, ensuring proper file permissions.
+## @param podSecurityContext.runAsUser Specifies the user ID to run processes inside the pod.
+## @param podSecurityContext.runAsGroup Specifies the primary group ID for the container.
+## @param podSecurityContext.runAsNonRoot Indicates that the container should not run as the root user.
+##
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+
+## Container Security Context Configuration
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
+## @param securityContext.capabilities.drop Drops all Linux capabilities for enhanced security.
+## @param securityContext.readOnlyRootFilesystem Enforces a read-only root filesystem, if set to true.
+## @param securityContext.allowPrivilegeEscalation Prevents processes from gaining additional privileges.
+## @param securityContext.runAsNonRoot Enforces that the container must run as a non-root user.
+##
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+
+## HDEU Hub Repo Service parameters
+## ref: https://kubernetes.io/docs/concepts/services-networking/service/
+## @param service.type Service type (ClusterIP makes it accessible only within the cluster)
+## @param service.port.service Defines the port exposed by the Kubernetes service for external communication
+## @param containerPort Defines the port on which the application inside the container is running
+##
+service:
+  type: ClusterIP
+  port: 9080
+containerPort: 8080
+
+## Application Configuration
+##
+## This ConfigMap defines environment variables used by the application.
+## These values provide runtime configurations, API keys, and service URLs.
+##
+## Important: Sensitive values, such as credentials and API keys, should NOT be stored here in plaintext.
+## Instead, they must be securely managed using AWS Secrets Manager and retrieved dynamically at runtime.
+## Refer to `templates/secrets.yaml` for secret management details.
+##
+## @param config.JAVA_OPTS JVM options for configuring memory allocation (minimum and maximum heap size).
+## @param config.HUB_REPO_API_KEY API key for authenticating with the HDEU Hub Repo service.
+## @param config.HUB_SEARCH_SERVICE_API_KEY API key for accessing the HDEU Hub Search service.
+## @param config.TRANSLATION_SERVICE_URL URL for the translation service endpoint.
+## @param config.TRANSLATION_SERVICE_CALLBACK_URL Callback URL for translation service responses.
+## @param config.HUB_STORE_DATA_UPLOAD_URL Base URL for the HDEU Hub Store service.
+## @param config.HUB_STORE_DATA_UPLOAD_SERVICE_URL Alternative URL for the HDEU Hub Store service.
+## @param config.HUB_STORE_DATA_UPLOAD_API_KEY API key required for HDEU Hub Store service authentication.
+## @param config.VIRTUOSO_CONFIG_URL Connection URL for the primary Virtuoso database.
+## @param config.VIRTUOSO_CONFIG_USER Username for the primary Virtuoso database.
+## @param config.VIRTUOSO_CONFIG_PASS Password for the primary Virtuoso database.
+## @param config.SHADOW_VIRTUOSO_CONFIG_URL Connection URL for the shadow Virtuoso database.
+## @param config.SHADOW_VIRTUOSO_CONFIG_USER Username for the shadow Virtuoso database.
+## @param config.SHADOW_VIRTUOSO_CONFIG_PASS Password for the shadow Virtuoso database.
+## @param config.HUB_REPO_HEALTH_CATEGORIES_VOCABULARY_BASE_URL URL for accessing the Health Categories vocabulary.
+## @param config.ITB_VALIDATOR_ENDPOINT Endpoint URL for the ITB RDF Validator service.
+##
+config:
+  {}
+  # Example:
+  # JAVA_OPTS: -Xms300m -Xmx1g
+  # TRANSLATION_SERVICE_URL: https://www.url.eu/translation-service/
+  # HUB_REPO_HEALTH_CATEGORIES_VOCABULARY_BASE_URL: http://13.81.34.152:1101/resource/authority/healthcategories/
+  # HUB_REPO_API_KEY: 728c0d8c-90d4-4357-89e5-0cb05a38dfb3
+  # HUB_SEARCH_SERVICE_API_KEY: 728c0d8c-90d4-4357-89e5-0cb05a38dfb3
+  # TRANSLATION_SERVICE_CALLBACK_URL: http://hdeu-hub-repo.example.com/translation
+  # HUB_STORE_DATA_UPLOAD_URL: http://hdeu-hub-store.example.com/
+  # HUB_STORE_DATA_UPLOAD_SERVICE_URL: http://hdeu-hub-store.default.svc.cluster.local:8080/
+  # HUB_STORE_DATA_UPLOAD_API_KEY: 728c0d8c-90d4-4357-89e5-0cb05a38dfb3
+  # VIRTUOSO_CONFIG_URL: hdeu-hub-repo-virtuoso.default.svc.cluster.local:8890
+  # VIRTUOSO_CONFIG_USER: dba
+  # VIRTUOSO_CONFIG_PASS: dba
+  # SHADOW_VIRTUOSO_CONFIG_URL: hdeu-hub-repo-shadow-virtuoso.default.svc.cluster.local:9890
+  # SHADOW_VIRTUOSO_CONFIG_USER: dba
+  # SHADOW_VIRTUOSO_CONFIG_PASS: dba
+  # ITB_VALIDATOR_ENDPOINT: http://hdeu-itb-rdf-validator.default.svc.cluster.local/shacl/ehds/api/validate
+
+## AWS Secrets Manager Integration
+##
+## This configuration enforces the use of AWS Secrets Manager to securely store and retrieve sensitive values
+## that are required by the application. Sensitive configuration values should NOT be stored directly in plaintext
+## within the ConfigMap but instead must be managed securely in AWS Secrets Manager.
+##
+## When `aws.enabled` is set to `true`, the application retrieves these values from AWS Secrets Manager via
+## Kubernetes secrets using the AWS Secrets Manager CSI driver.
+##
+## The following environment variables must be stored in AWS Secrets Manager:
+## - `VIRTUOSO_CONFIG_URL` (Virtuoso database connection URL)
+## - `VIRTUOSO_CONFIG_USER` (Virtuoso database username)
+## - `VIRTUOSO_CONFIG_PASS` (Virtuoso database password)
+## - `SHADOW_VIRTUOSO_CONFIG_URL` (Shadow Virtuoso database connection URL)
+## - `SHADOW_VIRTUOSO_CONFIG_USER` (Shadow Virtuoso database username)
+## - `SHADOW_VIRTUOSO_CONFIG_PASS` (Shadow Virtuoso database password)
+## - `HUB_REPO_API_KEY` (API key for HDEU Hub Repo service)
+## - `HUB_SEARCH_SERVICE_API_KEY` (API key for HDEU Hub Search Service)
+## - `HUB_STORE_DATA_UPLOAD_API_KEY` (API key for HDEU Hub Store service)
+##
+## These secrets are referenced in the deployment as Kubernetes SecretKeyRefs:
+## @param secrets.provider Specifies AWS as the secrets management provider.
+## @param aws.enabled If set to `true`, enables retrieval of environment variables from AWS Secrets Manager.
+##
+## AWS Secrets Manager Documentation:
+## - https://docs.aws.amazon.com/secretsmanager/latest/userguide/intro.html
+## - https://docs.aws.amazon.com/secretsmanager/latest/userguide/integrating_csi_driver.html
+##
+## Enables AWS Secrets Manager for retrieving environment variables
+aws:
+  enabled: false
+## Defines AWS as the secret management provider
+secrets:
+  provider: aws
+
+## HDEU HUB REPO configuration that stored in a Secret
+configJson:
+  ## @param PIVEAU_HUB_SERVICE_PORT The port on which the HDEU hub repo is running
+  PIVEAU_HUB_SERVICE_PORT: 8080
+  ## @param PIVEAU_HUB_CORS_DOMAINS The list of domains that are allowed to access the HDEU hub repo
+  PIVEAU_HUB_CORS_DOMAINS:
+    []
+    # Example:
+    # PIVEAU_HUB_CORS_DOMAINS: ["http://hdeu-hub-ui.example.com", "localhost", "example.com"]
+  greeting: "You know, for metadata!"
+  ## @param PIVEAU_HUB_API_KEY The API key for the HDEU hub repo
+  PIVEAU_HUB_API_KEY: ""
+  # Example:
+  # PIVEAU_HUB_API_KEY: "728c0d8c-90d4-4357-89e5-0cb05a38dfb3"
+  ##
+  ## @param baseUri The base URI of the HDEU hub-ui
+  ## see https://code.europa.eu/healthdataeu-private/healthdataeu-eu-dataset-catalogue/hdeu-hub-ui
+  PIVEAU_DCATAP_SCHEMA_CONFIG:
+    baseUri: ""
+    catalogueContext: "catalogues/"
+    datasetContext: "datasets/"
+    distributionContext: "set/distribution/"
+    historyMetricsContext: "id/history_metrics/"
+    metricsContext: "id/metrics/"
+    recordContext: "set/record/"
+    # Example:
+    # baseUri: "http://hdeu-hub-ui.example.com/"
+  PIVEAU_HUB_VALIDATOR:
+    enabled: false
+    metricsPipeName: "metrics"
+    history: false
+  ## HDEU Hub Repo Search Service
+  ## see https://code.europa.eu/healthdataeu-private/healthdataeu-eu-dataset-catalogue/hdeu-hub-search
+  ## @param enabled Enable the HDEU Hub Repo Search Service
+  ## @param url The URL of the HDEU Hub Repo Search Service
+  ## @param port The port of the HDEU Hub Repo Search Service
+  ## @param api_key The API key of the HDEU Hub Repo Search Service
+  ##
+  PIVEAU_HUB_SEARCH_SERVICE:
+    enabled: true
+    url: ""
+    port: ""
+    api_key: ""
+    # Example:
+    # enabled: true
+    # url: "healthdataeu-piveau-hub-search.healthdataeu.svc.cluster.local"
+    # port: 8080
+    # api_key: "728c0d8c-90d4-4357-89e5-0cb05a38dfb3"
+  ## Enable the loading of RDF vocabularies
+  PIVEAU_HUB_LOAD_VOCABULARIES: true
+  ## Enable the loading of RDF vocabularies from remote
+  PIVEAU_HUB_LOAD_VOCABULARIES_FETCH: false
+  PIVEAU_HUB_XML_DECLARATION: false
+  ## Translation configuration
+  ## @param enable Enable the machine translation service
+  ## @param accepted_languages Target languages to be translated
+  ## @param translation_service_url The URL of the translation service
+  ## @param callback_url The callback URL for the translation service
+  ##
+  PIVEAU_TRANSLATION_SERVICE:
+    enable: false
+    accepted_languages: []
+    translation_service_url: ""
+    callback_url: ""
+    # Example:
+    # enable: true
+    # accepted_languages: ["en", "fr"]
+    # translation_service_url: "https://www.url.eu/translation-service/"
+    # callback_url: "http://hdeu-hub-repo.healthdataeu.eurodyn.com/translation"
+  ## HDEU hub store data
+  ## see https://code.europa.eu/healthdataeu-private/healthdataeu-eu-dataset-catalogue/hdeu-hub-store
+  ## @param url The URL of the HDEU hub store kubernetes service
+  ## @param service_url The URL of the HDEU hub store kubernetes service
+  ## @param api_key The API key for the HDEU hub store
+  ##
+  PIVEAU_DATA_UPLOAD:
+    url: ""
+    service_url: ""
+    api_key: ""
+    # Example:
+    # url: "hdeu-hub-store.default.svc.cluster.local:8081"
+    # service_url: "hdeu-hub-store.default.svc.cluster.local:8081"
+    # api_key: "728c0d8c-90d4-4357-89e5-0cb05a38dfb3"
+  ## Triplestore configuration
+  ## @param address The URL of the triplestore
+  ## @param username The username for the triplestore
+  ## @param password The password for the triplestore
+  ##
+  PIVEAU_TRIPLESTORE_CONFIG:
+    address: ""
+    graphEndpoint: "/sparql-graph-crud"
+    graphAuthEndpoint: "/sparql-graph-crud-auth"
+    queryEndpoint: "/sparql"
+    queryAuthEndpoint: "/sparql-auth"
+    username: ""
+    password: ""
+    # Example:
+    # address: "http://virtuoso.default.svc.cluster.local:8890"
+    # username: "dba"
+    # password: "dba"
+  ## Shadow Triplestore configuration
+  ## @param address The URL of the shadow triplestore
+  ## @param username The username for the shadow triplestore
+  ## @param password The password for the shadow triplestore
+  ##
+  PIVEAU_SHADOW_TRIPLESTORE_CONFIG:
+    address: ""
+    username: ""
+    password: ""
+    # Example:
+    # address: "http://shadow-virtuoso.default.svc.cluster.local:9890"
+    # username: "dba"
+    # password: "dba"
+  ## Identifiers registration
+  ## @param type The type of identifier
+  ## @param enabled Enable the identifier
+  PIVEAU_IDENTIFIERS_REGISTRATION:
+    - type: "eu-ra-doi"
+      enabled: false
+      api: "https://xxxxxx"
+      prefix: "xx.xxxx"
+      user: "xxxxx"
+      password: "xxxxx"
+    - type: "mock"
+      enabled: true
+
+## Hdeu Hub Repo Ingress
+## ref: http://kubernetes.io/docs/concepts/services-networking/ingress/
+## @param ingress.enabled Enable the ingress record
+## @param ingress.className Ingress Class
+## @param ingress.annotations Annotations to add to the ingress record
+## @param ingress.hosts Set the hosts for the ingress record
+## @param ingress.paths Set the paths for the ingress record
+## @param ingress.backend Set the backend for the ingress record
+## @param ingress.tls Enable TLS configuration for the ingress record
+##
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    host: ""
+    paths:
+      path: /
+      pathType: Prefix
+    backend:
+      service:
+        name: ""
+        port: 9080
+  tls: []
+
+## Resources configuration
+## ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+##
+resources:
+  {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+## Autoscaling configuration Dependency HPA
+## ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
+##
+## @param autoscaling.enabled Set to "true" to enable autoscaling, "false" to disable it.
+## @param autoscaling.minReplicas Minimum number of replicas that should always be running.
+## @param autoscaling.maxReplicas Maximum number of replicas allowed to handle high traffic.
+## @param autoscaling.targetCPUUtilizationPercentage CPU utilization threshold for scaling. When exceeded, more replicas are created.
+## @param autoscaling.targetMemoryUtilizationPercentage Memory utilization threshold for scaling (optional, uncomment to enable).
+##
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+## @section Virtuoso
+#
+virtuoso:
+  image:
+    repository: openlink/virtuoso-opensource-7
+    tag: latest
+  ## Image Pull Policies
+  ## ref: https://kubernetes.io/docs/concepts/containers/images/
+  ##
+  imagePullPolicy: IfNotPresent
+  replicaCount: 1
+  ## Deployment strategy.
+  ## ref: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#update-strategies
+  ## - "Recreate": Deletes the old pod before creating a new one (useful for stateful applications).
+  ## - "RollingUpdate": Gradually replaces old pods with new ones, ensuring zero downtime.
+  ##
+  strategy: RollingUpdate
+  ## Virtuoso service parameters
+  ## ref: https://kubernetes.io/docs/concepts/services-networking/service/
+  ## @param virtuoso.service.port.service Port exposed by the Kubernetes service
+  ## @param virtuoso.service.port.default Default internal port for Virtuoso database access
+  ## @param virtuoso.service.type Service type (ClusterIP makes it accessible only within the cluster)
+  ## @param virtuoso.containerPort.service The port used for the Virtuoso web service
+  ## @param virtuoso.containerPort.default The default port used for database connections
+  ##
+  service:
+    port:
+      service: 8890
+      default: 1111
+    type: ClusterIP
+  containerPort:
+    service: 8890
+    default: 1111
+  ## @param virtuoso.dbaPassword Password for the DBA user (should be set for security)
+  ##
+  dbaPassword:
+  ## Virtuoso Persistence Storage
+  ## ref: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+  ## @param virtuoso.persistence.size Virtuoso Persistent Volume Size
+  ##
+  persistence:
+    size: 10Gi
+  ## Virtuoso Service Account
+  ## ref: https://kubernetes.io/docs/concepts/security/service-accounts/
+  ## @param virtuoso.serviceAccount.create Specifies whether a service account should be created
+  ## @param virtuoso.serviceAccount.annotations Annotations to add to the service account
+  ## @param virtuoso.serviceAccount.name The name of the service account to use.
+  ## If not set and create is true, a name is generated using the fullname template
+  ##
+  serviceAccount:
+    create: true
+    # Annotations to add to the service account
+    annotations: {}
+    name: ""
+  ## Virtuoso ingress
+  ## ref: http://kubernetes.io/docs/concepts/services-networking/ingress/
+  ## @param virtuoso.ingress.enabled Enable the ingress record
+  ## @param virtuoso.ingress.className Ingress Class
+  ## @param virtuoso.ingress.annotations Annotations to add to the ingress record
+  ## @param virtuoso.ingress.hosts Set the hosts for the ingress record
+  ## @param virtuoso.ingress.paths Set the paths for the ingress record
+  ## @param virtuoso.ingress.backend Set the backend for the ingress record
+  ## @param virtuoso.ingress.tls Enable TLS configuration for the ingress record
+  ##
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      host: ""
+      paths:
+        path: /
+        pathType: Prefix
+      backend:
+        service:
+          name: ""
+          port: 8890
+    tls: []
+
+## @section Shadow Virtuoso
+##
+shadowVirtuoso:
+  image:
+    repository: openlink/virtuoso-opensource-7
+    tag: latest
+  ## Image Pull Policies
+  ## ref: https://kubernetes.io/docs/concepts/containers/images/
+  ##
+  imagePullPolicy: IfNotPresent
+  replicaCount: 1
+  ## Deployment strategy.
+  ## ref: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#update-strategies
+  ## - "Recreate": Deletes the old pod before creating a new one (useful for stateful applications).
+  ## - "RollingUpdate": Gradually replaces old pods with new ones, ensuring zero downtime.
+  ##
+  strategy: RollingUpdate
+  ## Shadow Virtuoso service parameters
+  ## ref: https://kubernetes.io/docs/concepts/services-networking/service/
+  ## @param shadowVirtuoso.service.port.service Port exposed by the Kubernetes service
+  ## @param shadowVirtuoso.service.port.default Default internal port for Virtuoso database access
+  ## @param shadowVirtuoso.service.type Service type (ClusterIP makes it accessible only within the cluster)
+  ## @param shadowVirtuoso.containerPort.service The port used for the Virtuoso web service
+  ## @param shadowVirtuoso.containerPort.default The default port used for database connections
+  ##
+  service:
+    port:
+      service: 9890
+      default: 9111
+    type: ClusterIP
+  containerPort:
+    service: 8890
+    default: 1111
+  ## @param shadowVirtuoso.dbaPassword Password for the DBA user (should be set for security)
+  ##
+  dbaPassword: "dba"
+  ## Shadow Virtuoso Persistence Storage
+  ## ref: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+  ## @param shadowVirtuoso.persistence.size Virtuoso Persistent Volume Size
+  ##
+  persistence:
+    size: 10Gi
+  ## Shadow Virtuoso Service Account
+  ## ref: https://kubernetes.io/docs/concepts/security/service-accounts/
+  ## @param shadowVirtuoso.serviceAccount.create Specifies whether a service account should be created
+  ## @param shadowVirtuoso.serviceAccount.annotations Annotations to add to the service account
+  ## @param shadowVirtuoso.serviceAccount.name The name of the service account to use.
+  ## If not set and create is true, a name is generated using the fullname template
+  ##
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+  ## Shadow Virtuoso ingress
+  ## ref: http://kubernetes.io/docs/concepts/services-networking/ingress/
+  ## @param shadowVirtuoso.ingress.enabled Enable the ingress record
+  ## @param shadowVirtuoso.ingress.className Ingress Class
+  ## @param shadowVirtuoso.ingress.annotations Annotations to add to the ingress record
+  ## @param shadowVirtuoso.ingress.hosts Set the hosts for the ingress record
+  ## @param shadowVirtuoso.ingress.paths Set the paths for the ingress record
+  ## @param shadowVirtuoso.ingress.backend Set the backend for the ingress record
+  ## @param shadowVirtuoso.ingress.tls Enable TLS configuration for the ingress record
+  ##
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      host: ""
+      paths:
+        path: /
+        pathType: Prefix
+      backend:
+        service:
+          name: ""
+          port: 9890
+    tls: []

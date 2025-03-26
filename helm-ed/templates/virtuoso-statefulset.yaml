@@ -1,0 +1,93 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+# This file is a template for the statefulset of the virtuoso service.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "piveau-hub-repo.virtuosoName" . }}
+  labels:
+    {{- include "piveau-hub-repo.virtuosoLabels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "piveau-hub-repo.virtuosoSelectorLabels" . | nindent 6 }}
+  serviceName: "virtuoso"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        {{- include "piveau-hub-repo.virtuosoSelectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "piveau-hub-repo.virtuosoServiceAccountName" . }}
+      containers:
+        - name: {{ include "piveau-hub-repo.virtuosoName" . }}
+          image: "{{ .Values.virtuoso.image.repository }}:{{ .Values.virtuoso.image.tag }}"
+          imagePullPolicy: {{ .Values.virtuoso.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.virtuoso.service.port.default }}
+              name: default
+              protocol: TCP
+            - containerPort: {{ .Values.virtuoso.service.port.service }}
+              name: service
+              protocol: TCP
+          {{- if .Values.virtuoso.resources }}
+          resources: {{ toYaml .Values.virtuoso.resources | nindent 12 }}
+          {{- end }}
+          # This env section allows us to set environment variables to the value of a key from a Kubernetes secret or a value from the values file
+          env:
+          # Conditional block - If the deployment is to take place in an AWS environment
+          {{- if .Values.aws.enabled }}
+            - name: DBA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: dba_password
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+          # Conditional block - If the deployment is to take place in a non-AWS environment
+          {{- else }}
+            - name: DBA_PASSWORD
+              value: {{ .Values.virtuoso.dbaPassword }}
+          {{- end }}
+          # This volumeMounts section mounts the virtuoso-data volume to the container under the /database directory or mounts the secret-volume to the container under the /etc/piveau-hub-repo-secrets directory
+          volumeMounts:
+            - mountPath: /database
+              name: virtuoso-data
+          # Conditional block - If the deployment is to take place in an AWS environment
+          {{- if .Values.aws.enabled }}
+            - name: {{ include "piveau-hub-repo.name" . }}-secrets
+              mountPath: /etc/{{ include "piveau-hub-repo.name" . }}-secrets
+              readOnly: true
+          {{- end }}
+      {{- if .Values.aws.enabled }}
+      volumes:
+      # We store the secrets defined in the secretProviderClass with the name piveau-hub-repo-spc, that in its turn, loads the secrets from the AWS Secret Manager
+        - name: {{ include "piveau-hub-repo.name" . }}-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "piveau-hub-repo.name" . }}-spc
+      {{- end }}
+  # This volumes section defines the virtuoso-data volume as a persistent volume claim
+  volumeClaimTemplates:
+    - metadata:
+        name: virtuoso-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.virtuoso.persistence.size }}

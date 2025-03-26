@@ -1,0 +1,12 @@
+{
+  "PIVEAU_HUB_AUTHORIZATION_PROCESS_DATA": {
+    "clientId": "piveau-hub-repo",
+    "clientSecret": "jO1vLnywfnwDIp4pQWy59pAfihrRj1Oi",
+    "tokenServerConfig": {
+      "keycloak": {
+        "serverUrl": "http://localhost:8090",
+        "realm": "piveau"
+      }
+    }
+  }
+}

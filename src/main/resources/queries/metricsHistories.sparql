@@ -1,0 +1,8 @@
+SELECT DISTINCT ?g WHERE
+{
+    GRAPH ?g
+    {
+        ?s ?p ?o
+    }
+    FILTER (STRSTARTS(STR(?g), "http://data.europa.eu/88u/history_metrics"))
+} LIMIT 100

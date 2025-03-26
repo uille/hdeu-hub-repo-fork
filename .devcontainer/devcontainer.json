@@ -1,0 +1,28 @@
+{
+	"name": "Health-data-hub-repo",
+	"image": "mcr.microsoft.com/devcontainers/java:17-bookworm",  // Java 17 Image
+	"features": {
+	  "ghcr.io/devcontainers/features/java:1": {
+		"version": "17",
+		"installMaven": "true"  // Installs Maven
+	  },
+	  "ghcr.io/devcontainers/features/docker-in-docker:2": {
+		"moby": true,  // Installs Docker (Moby)
+		"azureDnsAutoDetection": false,  // Not needed for local use
+		"installDockerBuildx": true,  // Installs Docker Buildx
+		"installDockerComposeSwitch": true,  // Installs the new docker compose command
+		"version": "latest",  // Latest version of Docker
+		"dockerDashComposeVersion": "latest"  // Latest version of Docker Compose
+	  }
+	},
+	"forwardPorts": [8080, 8085, 5432],  // Forward ports 
+	"customizations": {
+	  "vscode": {
+		"extensions": [
+		  "ms-azuretools.vscode-docker"  // Docker extension for VSCode
+		]
+	  }
+	},
+	"postStartCommand": "echo 'Container started!'",  
+	//"remoteUser": "root"  // Run as root
+  }

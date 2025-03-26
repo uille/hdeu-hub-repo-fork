@@ -1,0 +1,71 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+    logging:
+      options:
+        max-size: "50m"
+    volumes:
+      - elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      - bootstrap.memory_lock=true
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      #- indices.query.bool.max_clause_count=850
+      - ES_JAVA_OPTS=-Xms2G -Xmx4G
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200
+      - 9300:9300
+
+  virtuoso:
+    image: openlink/virtuoso-opensource-7:7.2.13-alpine
+    logging:
+      options:
+        max-size: "50m"
+    volumes:
+      - virtuoso_db:/opt/virtuoso-opensource/var/lib/virtuoso/db
+    ports:
+      - 8890:8890
+      - 1111:1111
+    environment:
+      - DBA_PASSWORD=dba
+
+
+  shadow-virtuoso:
+    image: openlink/virtuoso-opensource-7:7.2.13-alpine
+    logging:
+      options:
+        max-size: "50m"
+    volumes:
+      - shadow_virtuoso_db:/opt/virtuoso-opensource/var/lib/virtuoso/db
+    ports:
+      - 9890:8890
+      - 9111:1111
+    environment:
+      - DBA_PASSWORD=dba
+
+volumes:
+  virtuoso_db:
+  shadow_virtuoso_db:
+  elasticsearch:
+
+

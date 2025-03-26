@@ -1,0 +1,168 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+# This file is a template for the deployment of the piveau-hub-repo service.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "piveau-hub-repo.name" . }}
+  labels:
+    {{- include "piveau-hub-repo.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  # The number of replicas (pods) to run, defined in the values file, if autoscaling is not enabled
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    # The selector labels to identify the pods that this deployment manages
+    matchLabels:
+      {{- include "piveau-hub-repo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      # Annotations for the pods, included if present in the values file
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Labels for the pods
+      labels:
+        {{- include "piveau-hub-repo.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      # Image pull secrets for accessing private Docker registries
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "piveau-hub-repo.serviceAccountName" . }}
+      # Security context for the pods
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # The image for the container, using the repository and tag defined in the values file, defaulting to the chart's appVersion
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          # The image pull policy (e.g., Always, IfNotPresent)
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The port exposed by the container
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          # Resource requests and limits for the container
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 180
+            timeoutSeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 180
+            timeoutSeconds: 10
+            periodSeconds: 10
+            failureThreshold: 10 
+        # envFrom allows you to expose all the ConfigMap keys as environment variables
+          envFrom:
+            - configMapRef:
+                name: {{ include "piveau-hub-repo.name" . }}-configmap
+        # Conditional block - If the deployment is to take place in a non-AWS environment
+        {{- if not .Values.aws.enabled }}
+          # This volumeMounts section mounts the secret-volume to the container under the /usr/verticles/conf directory
+          volumeMounts:
+            - name: secret-volume
+              mountPath: /usr/verticles/conf          
+      # This volumes section defines the config.json file as a Kubernetes secret
+      volumes:
+        - name: secret-volume
+          secret:
+            secretName: {{ include "piveau-hub-repo.name" . }}-secret-json
+        # Conditional block - If the deployment is to take place in an AWS environment
+        {{- else }}
+          # This env section allows us to set environment variables to the value of a key from a Kubernetes secret
+          env:
+            - name: VIRTUOSO_CONFIG_URL
+              valueFrom:
+                secretKeyRef:
+                  key: virtuoso_config_url
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: VIRTUOSO_CONFIG_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: VIRTUOSO_CONFIG_PASS
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: SHADOW_VIRTUOSO_CONFIG_URL
+              valueFrom:
+                secretKeyRef:
+                  key: shadow_virtuoso_config_url
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: SHADOW_VIRTUOSO_CONFIG_USER
+              valueFrom:
+                secretKeyRef:
+                  key: shadow_username
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: SHADOW_VIRTUOSO_CONFIG_PASS
+              valueFrom:
+                secretKeyRef:
+                  key: shadow_password
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: HUB_REPO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: hub_repo_api_key
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: HUB_SEARCH_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: hub_search_service_api_key
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+            - name: HUB_STORE_DATA_UPLOAD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: hub_store_data_upload_api_key
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+          # This volumeMounts section mounts the secret-volume and the secrets to the container under the /usr/verticles/conf and /etc/{{ include "piveau-hub-repo.name" . }}-secrets
+          volumeMounts:
+            - name: secret-volume
+              mountPath: /usr/verticles/conf
+            - name: {{ include "piveau-hub-repo.name" . }}-secrets
+              mountPath: /etc/{{ include "piveau-hub-repo.name" . }}-secrets
+              readOnly: true
+      volumes:
+        # We store the config.json file as a Kubernetes secret
+        - name: secret-volume
+          secret:
+            secretName: {{ include "piveau-hub-repo.name" . }}-secret-json
+        # We store all the secrets defined in the secretProviderClass with the name piveau-hub-repo-spc, that in its turn, loads the secrets from the AWS Secret Manager
+        - name: {{ include "piveau-hub-repo.name" . }}-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "piveau-hub-repo.name" . }}-spc
+      {{- end }}

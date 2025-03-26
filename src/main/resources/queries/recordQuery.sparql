@@ -1,0 +1,20 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX spdx: <http://spdx.org/rdf/terms#>
+
+SELECT DISTINCT ?record ?hash WHERE
+{
+    GRAPH <%1$s>
+    {
+        <%2$s> dcat:record ?record
+    }
+    GRAPH ?d
+    {
+        ?record dct:identifier "%3$s"
+
+        OPTIONAL
+        {
+            ?record spdx:checksum/spdx:checksumValue ?hash
+        }
+    }
+}

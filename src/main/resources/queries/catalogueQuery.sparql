@@ -1,0 +1,13 @@
+PREFIX dct: <http://purl.org/dc/terms/>
+
+SELECT ?title ?type ?lang ?visibility ?super WHERE
+{
+    GRAPH <%1$s>
+    {
+        <%1$s> dct:title ?title
+        OPTIONAL { <%2$s> dct:type ?type }
+        OPTIONAL { <%2$s> dct:language ?lang }
+        OPTIONAL { <%2$s> <https://europeandataportal.eu/voc#visibility> ?visibility }
+        OPTIONAL { <%2$s> dct:isPartOf ?super }
+    }
+}

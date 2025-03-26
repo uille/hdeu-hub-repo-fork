@@ -1,0 +1,97 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+# This file is a template for the statefulset of the virtuoso service.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "piveau-hub-repo.shadowVirtuosoName" . }}
+  labels:
+    {{- include "piveau-hub-repo.shadowVirtuosoLabels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "piveau-hub-repo.shadowVirtuosoSelectorLabels" . | nindent 6 }}
+  serviceName: "virtuoso"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        {{- include "piveau-hub-repo.shadowVirtuosoSelectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "piveau-hub-repo.shadowVirtuosoServiceAccountName" . }}
+      containers:
+        - name: {{ include "piveau-hub-repo.shadowVirtuosoName" . }}
+          image: "{{ .Values.shadowVirtuoso.image.repository }}:{{ .Values.shadowVirtuoso.image.tag }}"
+          imagePullPolicy: {{ .Values.shadowVirtuoso.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.shadowVirtuoso.service.port.default }}
+              name: default
+              protocol: TCP
+            - containerPort: {{ .Values.shadowVirtuoso.service.port.service }}
+              name: service
+              protocol: TCP
+          {{- if .Values.shadowVirtuoso.resources }}
+          resources: {{ toYaml .Values.shadowVirtuoso.resources | nindent 12 }}
+          {{- end }}
+          # This env section allows us to set environment variables to the value of a key from a Kubernetes secret or a value from the values file
+          env:
+          # Conditional block - If the deployment is to take place in an AWS environment
+          {{- if .Values.aws.enabled }}
+            - name: DBA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: shadow_dba_password
+                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+          # Conditional block - If the deployment is to take place in a non-AWS environment
+          {{- else }}
+            - name: DBA_PASSWORD
+              value: {{ .Values.shadowVirtuoso.dbaPassword }}
+          {{- end }}
+          # This volumeMounts section mounts the shadow-virtuoso-data volume to the container under the /database directory or mounts the secret-volume to the container under the /etc/piveau-hub-repo-secrets directory
+          volumeMounts:
+            - mountPath: /database
+              name: shadow-virtuoso-data
+          # Conditional block - If the deployment is to take place in an AWS environment
+          {{- if .Values.aws.enabled }}
+            - name: {{ include "piveau-hub-repo.name" . }}-secrets
+              mountPath: /etc/{{ include "piveau-hub-repo.name" . }}-secrets
+              readOnly: true
+          {{- end }}
+      # This volumes section defines the shadow-virtuoso-data volume as a persistent volume claim
+      volumes:
+        - name: shadow-virtuoso-data
+          persistentVolumeClaim:
+            claimName: {{ include "piveau-hub-repo.shadowVirtuosoName" . }}
+      {{- if .Values.aws.enabled }}
+      # We store the secrets defined in the secretProviderClass with the name piveau-hub-repo-spc, that in its turn, loads the secrets from the AWS Secret Manager
+        - name: {{ include "piveau-hub-repo.name" . }}-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "piveau-hub-repo.name" . }}-spc
+      {{- end }}
+  # This volumes section defines the shadow-virtuoso-data volume as a persistent volume claim
+  volumeClaimTemplates:
+    - metadata:
+        name: shadow-virtuoso-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.shadowVirtuoso.persistence.size }}

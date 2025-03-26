@@ -1,0 +1,127 @@
+{
+  "PIVEAU_HUB_SERVICE_PORT": 8080,
+  "PIVEAU_HUB_CORS_DOMAINS": [],
+  "greeting": "You know, for metadata!",
+  "PIVEAU_HUB_API_KEYS": {
+    "apiKey": [
+      "*"
+    ],
+    "specialKey": [
+      "resource1",
+      "resource2"
+    ]
+  },
+  "PIVEAU_HUB_SHELL_CONFIG": {
+    "http": {}
+  },
+  "PIVEAU_DCATAP_SCHEMA_CONFIG": {
+    "baseUri": "https://piveau.io/",
+    "catalogueContext": "id/catalogue/",
+    "datasetContext": "set/data/",
+    "distributionContext": "set/distribution/",
+    "historyMetricsContext": "id/history_metrics/",
+    "metricsContext": "id/metrics/",
+    "recordContext": "set/record/"
+  },
+  "PIVEAU_HUB_VALIDATOR": {
+    "enabled": false,
+    "metricsPipeName": "metrics",
+    "history": false
+  },
+  "PIVEAU_HUB_SEARCH_SERVICE": {
+    "enabled": true,
+    "url": "localhost",
+    "port": 8081,
+    "api_key": "myapikey"
+  },
+  "PIVEAU_HUB_LOAD_VOCABULARIES": true,
+  "PIVEAU_HUB_LOAD_VOCABULARIES_FETCH": false,
+  "PIVEAU_HUB_XML_DECLARATION": false,
+  "PIVEAU_TRANSLATION_SERVICE": {
+    "enable": false,
+    "accepted_languages": [
+      "en",
+      "bg",
+      "hr",
+      "cs",
+      "da",
+      "nl",
+      "et",
+      "fi",
+      "fr",
+      "el",
+      "hu",
+      "ga",
+      "it",
+      "lv",
+      "lt",
+      "mt",
+      "pl",
+      "pt",
+      "ro",
+      "sk",
+      "sl",
+      "es",
+      "sv",
+      "nb",
+      "de"
+    ],
+    "translation_service_url": "https://www.url.eu/translation-service/",
+    "callback_url": "http://localhost:8080/translation"
+  },
+  "PIVEAU_DATA_UPLOAD": {
+    "url": "http://localhost:8086",
+    "service_url": "http://localhost:8086",
+    "api_key": "Bearer db916db8-8aeb-4915-a3b9-f6b264b5d983"
+  },
+  "PIVEAU_TRIPLESTORE_CONFIG": {
+    "address": "http://localhost:8890",
+    "graphEndpoint": "/sparql-graph-crud",
+    "graphAuthEndpoint": "/sparql-graph-crud-auth",
+    "queryEndpoint": "/sparql",
+    "queryAuthEndpoint": "/sparql-auth",
+    "username": "dba",
+    "password": "dba",
+    "transferFormat": "application/n-triples"
+  },
+  "PIVEAU_SHADOW_TRIPLESTORE_CONFIG": {
+    "address": "http://localhost:9890",
+    "username": "dba",
+    "password": "dba"
+  },
+  "PIVEAU_IDENTIFIERS_REGISTRATION": [
+    {
+      "type": "eu-ra-doi",
+      "enabled": false,
+      "api": "https://xxxxxx",
+      "prefix": "xx.xxxx",
+      "user": "xxxxx",
+      "password": "xxxxx"
+    },
+    {
+      "type": "mock",
+      "enabled": true
+    }
+  ],
+  "PIVEAU_FEATURE_FLAGS": {
+    "extended_rights_management": false,
+    "piveau_profile": false,
+    "piveau_trust": false
+  },
+  "PIVEAU_PROFILE": {
+    "type": "directory",
+    "path": "/path/to/my/profiles/piveau-profiles/dcat-ap-minimal"
+  },
+  "PIVEAU_TRUST_CONFIG": {
+    "did": "did:web:example.org",
+    "verificationMethod": "did:web:example.org#JWK2020-RSA",
+    "address": "http://localhost:8080",
+    "pathVCCore": "/trust/core",
+    "pathVCServiceOffering": "/trust/service-offering",
+    "pathVCDataResource": "/trust/data-resource",
+    "pathDID": "/trust/did",
+    "addressSignService": "https://signing-example.com",
+    "key": "PRIVATE KEY HERE"
+  }
+}
+

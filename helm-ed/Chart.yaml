@@ -1,0 +1,36 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+# This helm chart is used to deploy the HDEU Hub Repo service in a Kubernetes cluster.
+
+# API version of the chart, for Helm 3 this should be v2
+apiVersion: v2
+# The name of the chart
+name: healthdataeu-piveau-hub-repo
+# A brief description of what this chart does
+description: A Helm chart to deploy the HDEU Hub Repo service
+
+# The type of chart, either 'application' for deployable applications or 'library' for reusable chart utilities
+type: application
+
+# The version of the chart itself, following Semantic Versioning
+version: 0.0.1
+
+# The version of the application being deployed
+appVersion: "0.0.1"
+
+maintainers:
+  - name: European Dynamics SA

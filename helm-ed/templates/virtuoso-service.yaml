@@ -1,0 +1,39 @@
+#
+# Copyright (C) 2024 European Union
+#  __
+# Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the
+# European Commission – subsequent versions of the EUPL (the “Licence”);
+# You may not use this work except in compliance with the Licence.
+# You may obtain a copy of the Licence at:
+# *
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# *
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS
+# OF ANY KIND, either express or implied. See the Licence for the specific language
+# governing permissions and limitations under the Licence.
+#
+
+# This file is a template to expose the virtuoso application as a Kubernetes service.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "piveau-hub-repo.virtuosoName" . }}
+  labels:
+    {{- include "piveau-hub-repo.virtuosoLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  # The ports that the service should expose
+  ports:
+    - name: default
+      port: {{ .Values.virtuoso.service.port.default }}
+      targetPort: {{ .Values.virtuoso.containerPort.default }}
+      protocol: TCP
+    - name: service
+      port: {{ .Values.virtuoso.service.port.service }}
+      targetPort: {{ .Values.virtuoso.containerPort.service }}
+      protocol: TCP
+  # The selector labels to identify the pods that the service should target
+  selector:
+    {{- include "piveau-hub-repo.virtuosoSelectorLabels" . | nindent 4 }}

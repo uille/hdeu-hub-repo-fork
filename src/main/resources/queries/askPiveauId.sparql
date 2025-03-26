@@ -1,0 +1,9 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+ASK WHERE
+{
+    GRAPH ?catalogue
+    {
+        ?catalogue dcat:dataset <%1$s>
+    }
+}
