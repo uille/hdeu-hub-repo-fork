@@ -34,7 +34,9 @@ import io.piveau.hub.util.DataUploadConnector;
 import io.piveau.json.ConfigHelper;
 import io.piveau.log.PiveauLogger;
 import io.piveau.pipe.PipeLauncher;
-import io.piveau.rdf.*;
+import io.piveau.rdf.HydraCollection;
+import io.piveau.rdf.Piveau;
+import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.sparql.SparqlQueryPool;
 import io.piveau.utils.PiveauContext;
 import io.piveau.vocabularies.Concept;
@@ -58,8 +60,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.jena.graph.NodeFactory;
-import org.apache.jena.query.*;
-import org.apache.jena.rdf.model.*;
+import org.apache.jena.query.Dataset;
+import org.apache.jena.query.DatasetFactory;
+import org.apache.jena.query.QuerySolution;
+import org.apache.jena.rdf.model.Literal;
+import org.apache.jena.rdf.model.Model;
+import org.apache.jena.rdf.model.Resource;
+import org.apache.jena.rdf.model.ResourceFactory;
+import org.apache.jena.rdf.model.Statement;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RiotException;
 import org.apache.jena.shared.DoesNotExistException;
@@ -67,7 +75,10 @@ import org.apache.jena.vocabulary.DCAT;
 import org.apache.jena.vocabulary.RDF;
 import org.ehcache.Cache;
 import org.ehcache.CacheManager;
-import org.ehcache.config.builders.*;
+import org.ehcache.config.builders.CacheConfigurationBuilder;
+import org.ehcache.config.builders.CacheManagerBuilder;
+import org.ehcache.config.builders.ExpiryPolicyBuilder;
+import org.ehcache.config.builders.ResourcePoolsBuilder;
 import org.ehcache.config.units.EntryUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,8 +87,8 @@ public class DatasetsServiceImpl implements DatasetsService {
 
   private static final String DGA_SUPER_CATALOGUE = "http://data.europa.eu/88u/catalogue/erpd";
 
-    private static final String KEY_ENABLED = "enabled";
-    private static final String KEY_VISIBILITY = "visibility";
+  private static final String KEY_ENABLED = "enabled";
+  private static final String KEY_VISIBILITY = "visibility";
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
   private final PiveauContext piveauContext = new PiveauContext("hub", "repo");
@@ -107,16 +118,16 @@ public class DatasetsServiceImpl implements DatasetsService {
 
   private Boolean archivingEnabled = Defaults.EXPERIMENTS;
 
-    private final SparqlQueryPool sparqlQueryPool;
+  private final SparqlQueryPool sparqlQueryPool;
 
-    DatasetsServiceImpl(
-            TripleStore tripleStore,
-            TripleStore shadowTripleStore,
-            DataUploadConnector dataUploadConnector,
-            JsonObject config,
-            PipeLauncher launcher,
-            Vertx vertx,
-            Handler<AsyncResult<DatasetsService>> readyHandler) {
+  DatasetsServiceImpl(
+      TripleStore tripleStore,
+      TripleStore shadowTripleStore,
+      DataUploadConnector dataUploadConnector,
+      JsonObject config,
+      PipeLauncher launcher,
+      Vertx vertx,
+      Handler<AsyncResult<DatasetsService>> readyHandler) {
 
     CacheManager cacheManager = CacheManagerBuilder.newCacheManagerBuilder()
         .withCache("datasetsService",
@@ -149,12 +160,16 @@ public class DatasetsServiceImpl implements DatasetsService {
     this.dataUploadConnector = dataUploadConnector;
 
     JsonObject indexConfig = configHelper.forceJsonObject(Constants.ENV_PIVEAU_HUB_SEARCH_SERVICE);
-        if (indexConfig.getBoolean(KEY_ENABLED, Defaults.SEARCH_SERVICE_ENABLED) == Boolean.TRUE) {
-            indexService = IndexService.createProxy(vertx, IndexService.SERVICE_ADDRESS, IndexService.DEFAULT_TIMEOUT);
+    if (indexConfig.getBoolean(KEY_ENABLED, Defaults.SEARCH_SERVICE_ENABLED) == Boolean.TRUE) {
+      indexService = IndexService.createProxy(vertx, IndexService.SERVICE_ADDRESS,
+          IndexService.DEFAULT_TIMEOUT);
     }
-        JsonObject translationConfig = configHelper.forceJsonObject(Constants.ENV_PIVEAU_TRANSLATION_SERVICE);
-        if (translationConfig.getBoolean("enable", Defaults.TRANSLATION_SERVICE_ENABLED) == Boolean.TRUE) {
-            translationService = TranslationService.createProxy(vertx, TranslationService.SERVICE_ADDRESS);
+    JsonObject translationConfig = configHelper.forceJsonObject(
+        Constants.ENV_PIVEAU_TRANSLATION_SERVICE);
+    if (translationConfig.getBoolean("enable", Defaults.TRANSLATION_SERVICE_ENABLED)
+        == Boolean.TRUE) {
+      translationService = TranslationService.createProxy(vertx,
+          TranslationService.SERVICE_ADDRESS);
     }
 
     validationConfig = configHelper.forceJsonObject(Constants.ENV_PIVEAU_HUB_VALIDATOR);
@@ -165,80 +180,84 @@ public class DatasetsServiceImpl implements DatasetsService {
   }
 
   @Override
-    public Future<String> listCatalogueDatasets(String acceptType, String valueType, String catalogueId, Integer limit, Integer offset) {
-        return catalogueManager.exist(catalogueId)
-          .compose(exists -> {
-                    if (exists == Boolean.FALSE) {
-              return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
-            } else {
-              switch (valueType) {
-                case "originalIds" -> {
-                  return catalogueManager.allDatasetIdentifiers(catalogueId)
-                      .map(list -> new JsonArray(list).encodePrettily());
-                }
-                case "identifiers" -> {
-                  return catalogueManager.datasets(catalogueId, offset, limit)
-                      .map(list -> new JsonArray(
-                          list.stream().map(DCATAPUriRef::getId).toList()).encodePrettily());
-                }
-                case "uriRefs" -> {
-                  return catalogueManager.datasets(catalogueId, offset, limit)
-                      .map(list -> new JsonArray(
-                          list.stream().map(DCATAPUriRef::getUri).toList()).encodePrettily());
-                }
-                case "metadata" -> {
-                  return catalogueManager.listDatasets(catalogueId, offset, limit)
-                      .map(list -> {
-                                            list.forEach(this::prepareDataset);
-                        return Piveau.presentAs(list, acceptType, DCAT.Dataset);
-                      });
-                }
-                default -> {
-                  return Future.failedFuture(new ServiceException(400, "Unknown value type"));
-                }
+  public Future<String> listCatalogueDatasets(String acceptType, String valueType,
+      String catalogueId, Integer limit, Integer offset) {
+    return catalogueManager.exist(catalogueId)
+        .compose(exists -> {
+          if (exists == Boolean.FALSE) {
+            return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
+          } else {
+            switch (valueType) {
+              case "originalIds" -> {
+                return catalogueManager.allDatasetIdentifiers(catalogueId)
+                    .map(list -> new JsonArray(list).encodePrettily());
+              }
+              case "identifiers" -> {
+                return catalogueManager.datasets(catalogueId, offset, limit)
+                    .map(list -> new JsonArray(
+                        list.stream().map(DCATAPUriRef::getId).toList()).encodePrettily());
+              }
+              case "uriRefs" -> {
+                return catalogueManager.datasets(catalogueId, offset, limit)
+                    .map(list -> new JsonArray(
+                        list.stream().map(DCATAPUriRef::getUri).toList()).encodePrettily());
+              }
+              case "metadata" -> {
+                return catalogueManager.listDatasets(catalogueId, offset, limit)
+                    .map(list -> {
+                      list.forEach(this::prepareDataset);
+                      return Piveau.presentAs(list, acceptType, DCAT.Dataset);
+                    });
+              }
+              default -> {
+                return Future.failedFuture(new ServiceException(400, "Unknown value type"));
               }
             }
-          });
+          }
+        });
   }
 
   @Override
-    public Future<String> listDatasets(String acceptType, String valueType, Integer limit, Integer offset, Boolean hydra, String base, Boolean usePagedCollection) {
-      switch (valueType) {
-        case "originalIds" -> {
-          return Future.failedFuture(new ServiceException(400,
-              "Value type originalIds only allowed when catalogueId is set"));
-        }
-        case "identifiers" -> {
-          return datasetManager.list(offset, limit)
-              .map(list -> new JsonArray(
-                  list.stream().map(DCATAPUriRef::getId).toList()).encodePrettily());
-        }
-        case "uriRefs" -> {
-          return datasetManager.list(offset, limit)
-              .map(list -> new JsonArray(
-                  list.stream().map(DCATAPUriRef::getUri).toList()).encodePrettily());
-        }
-        case "metadata" -> {
-          return datasetManager.listModels(offset, limit)
-              .compose(list -> {
-                            list.forEach(this::prepareDataset);
-                            if (hydra == Boolean.TRUE) {
-                                return datasetManager.count()
-                                        .compose(count -> {
-                                            HydraCollection hydraCollection = HydraCollection.build(base, count, offset, limit, usePagedCollection);
-                                            list.add(hydraCollection.getModel());
-                                            return Future.succeededFuture(Piveau.presentAs(list, acceptType, DCAT.Dataset));
-                                        });
-                } else {
-                  return Future.succeededFuture(Piveau.presentAs(list, acceptType, DCAT.Dataset));
-                }
-              });
-        }
-        default -> {
-          return Future.failedFuture(new ServiceException(400, "Unknown value type"));
-        }
+  public Future<String> listDatasets(String acceptType, String valueType, Integer limit,
+      Integer offset, Boolean hydra, String base, Boolean usePagedCollection) {
+    switch (valueType) {
+      case "originalIds" -> {
+        return Future.failedFuture(new ServiceException(400,
+            "Value type originalIds only allowed when catalogueId is set"));
+      }
+      case "identifiers" -> {
+        return datasetManager.list(offset, limit)
+            .map(list -> new JsonArray(
+                list.stream().map(DCATAPUriRef::getId).toList()).encodePrettily());
+      }
+      case "uriRefs" -> {
+        return datasetManager.list(offset, limit)
+            .map(list -> new JsonArray(
+                list.stream().map(DCATAPUriRef::getUri).toList()).encodePrettily());
+      }
+      case "metadata" -> {
+        return datasetManager.listModels(offset, limit)
+            .compose(list -> {
+              list.forEach(this::prepareDataset);
+              if (hydra == Boolean.TRUE) {
+                return datasetManager.count()
+                    .compose(count -> {
+                      HydraCollection hydraCollection = HydraCollection.build(base, count, offset,
+                          limit, usePagedCollection);
+                      list.add(hydraCollection.getModel());
+                      return Future.succeededFuture(
+                          Piveau.presentAs(list, acceptType, DCAT.Dataset));
+                    });
+              } else {
+                return Future.succeededFuture(Piveau.presentAs(list, acceptType, DCAT.Dataset));
+              }
+            });
+      }
+      default -> {
+        return Future.failedFuture(new ServiceException(400, "Unknown value type"));
       }
     }
+  }
 
   private Model changeVirtuType(Model model) {
     List<Statement> stmtList = new ArrayList<>();
@@ -276,115 +295,118 @@ public class DatasetsServiceImpl implements DatasetsService {
 
   @Override
   public Future<String> getDatasetOrigin(String originId, String catalogueId, String acceptType) {
-        return catalogueManager.exist(catalogueId)
-          .compose(exists -> {
-                    if (exists == Boolean.TRUE) {
-              return datasetManager.get(originId, catalogueId);
-            } else {
-              return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
-            }
-          })
-          .map(model -> {
-            if (model.isEmpty()) {
-              throw new ServiceException(404, "Dataset not found");
-            } else {
-                        prepareDataset(model);
-              return Piveau.presentAs(model, acceptType);
-            }
-          })
-                .recover(cause -> Future.failedFuture(mapCause(cause)));
+    return catalogueManager.exist(catalogueId)
+        .compose(exists -> {
+          if (exists == Boolean.TRUE) {
+            return datasetManager.get(originId, catalogueId);
+          } else {
+            return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
+          }
+        })
+        .map(model -> {
+          if (model.isEmpty()) {
+            throw new ServiceException(404, "Dataset not found");
+          } else {
+            prepareDataset(model);
+            return Piveau.presentAs(model, acceptType);
+          }
+        })
+        .recover(cause -> Future.failedFuture(mapCause(cause)));
   }
 
   @Override
   public Future<String> getDataset(String id, String acceptType) {
-        DCATAPUriRef uriRef = DCATAPUriSchema.createForDataset(id);
-      return datasetManager.getGraph(uriRef.getGraphName())
-          .map(model -> {
-            if (model.isEmpty()) {
-              throw new ServiceException(404, "Dataset not found");
-            } else {
-                        prepareDataset(model);
-              return Piveau.presentAs(model, acceptType);
-            }
-          });
+    DCATAPUriRef uriRef = DCATAPUriSchema.createForDataset(id);
+    return datasetManager.getGraph(uriRef.getGraphName())
+        .map(model -> {
+          if (model.isEmpty()) {
+            throw new ServiceException(404, "Dataset not found");
+          } else {
+            prepareDataset(model);
+            return Piveau.presentAs(model, acceptType);
+          }
+        });
   }
 
   @Override
   public Future<String> getRecord(String id, String acceptType) {
-      DCATAPUriRef uriRef = DCATAPUriSchema.createForDataset(id);
-      return datasetManager.getGraph(uriRef.getDatasetGraphName())
-          .map(model -> {
-            if (model.isEmpty()) {
-              throw new ServiceException(404, "Catalogue record not found");
-            } else {
-                        Resource recordResource = Piveau.findRecordAsResource(model);
-                        if (recordResource != null) {
-                            Model extracted = Piveau.extractAsModel(recordResource);
+    DCATAPUriRef uriRef = DCATAPUriSchema.createForDataset(id);
+    return datasetManager.getGraph(uriRef.getDatasetGraphName())
+        .map(model -> {
+          if (model.isEmpty()) {
+            throw new ServiceException(404, "Catalogue record not found");
+          } else {
+            Resource recordResource = Piveau.findRecordAsResource(model);
+            if (recordResource != null) {
+              Model extracted = Piveau.extractAsModel(recordResource);
 
               if (Piveau.isQuadFormat(acceptType)) {
-                                Dataset dataset = DatasetFactory.create(extracted);
-                                Prefixes.setNsPrefixesFiltered(dataset);
+                Dataset dataset = DatasetFactory.create(extracted);
+                Prefixes.setNsPrefixesFiltered(dataset);
                 return Piveau.presentAs(dataset, acceptType);
               } else {
-                                Prefixes.setNsPrefixesFiltered(extracted);
-                                return Piveau.presentAs(extracted, acceptType);
+                Prefixes.setNsPrefixesFiltered(extracted);
+                return Piveau.presentAs(extracted, acceptType);
               }
-                        } else {
-                            throw new ServiceException(404, "Catalogue record not found");
-              }
+            } else {
+              throw new ServiceException(404, "Catalogue record not found");
             }
-          });
+          }
+        });
   }
 
   @Override
   public Future<JsonObject> putDataset(String datasetId, String content, String contentType) {
-        PiveauLogger logPiveau = piveauContext.extend(datasetId).log();
+    PiveauLogger logPiveau = piveauContext.extend(datasetId).log();
 
-        DatasetHelper datasetHelper;
+    DatasetHelper datasetHelper;
     try {
-            datasetHelper = DatasetHelper.create(content, contentType);
-        } catch (Exception e) {
-            return Future.failedFuture(new ServiceException(400, e.getMessage()));
-        }
+      datasetHelper = DatasetHelper.create(content, contentType);
+    } catch (Exception e) {
+      return Future.failedFuture(new ServiceException(400, e.getMessage()));
+    }
 
-        return datasetManager.existGraph(datasetHelper.graphName())
-          .compose(exists -> {
-                    if (exists == Boolean.FALSE) {
-              return Future.failedFuture(new ServiceException(404, "Dataset not found"));
-            } else {
-                        return datasetManager.catalogue(datasetHelper.uriRef());
-            }
-          })
-          .compose(catalog -> {
-                    String catalogueId = DCATAPUriSchema.parseUriRef(catalog.getURI()).getId();
-                    datasetHelper.catalogueId(catalogueId);
-                    return catalogueInfo(catalogueId);
-          })
-          .compose(info -> {
-                    datasetHelper.setCatalogueInfo(info);
-                    return updateDataset(datasetHelper, datasetHelper.recordUriRef());
-          })
-          .compose(this::store)
-          .map(result -> {
-            if (indexService != null) {
-                        index(datasetHelper)
-                  .onFailure(cause -> {
-                    if (cause instanceof ServiceException serviceException) {
-                                        logPiveau.error("Indexing failure: {}", serviceException.getDebugInfo().encode(), cause);
-                    }
-                  });
-                    } else {
-                        logPiveau.debug("index service disabled");
-            }
-                    if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED) == Boolean.TRUE) {
-                        systemPipes(datasetHelper);
-            }
-            //Log to archive
-                    if (archivingEnabled == Boolean.TRUE) {
-                        logPiveau.info("[Dataset] [0] [updated] " + Piveau.presentAsRdfXml(datasetHelper.model()));
-            }
-            return result;
-          });
+    return datasetManager.existGraph(datasetHelper.graphName())
+        .compose(exists -> {
+          if (exists == Boolean.FALSE) {
+            return Future.failedFuture(new ServiceException(404, "Dataset not found"));
+          } else {
+            return datasetManager.catalogue(datasetHelper.uriRef());
+          }
+        })
+        .compose(catalog -> {
+          String catalogueId = DCATAPUriSchema.parseUriRef(catalog.getURI()).getId();
+          datasetHelper.catalogueId(catalogueId);
+          return catalogueInfo(catalogueId);
+        })
+        .compose(info -> {
+          datasetHelper.setCatalogueInfo(info);
+          return updateDataset(datasetHelper, datasetHelper.recordUriRef());
+        })
+        .compose(this::store)
+        .map(result -> {
+          if (indexService != null) {
+            index(datasetHelper)
+                .onFailure(cause -> {
+                  if (cause instanceof ServiceException serviceException) {
+                    logPiveau.error("Indexing failure: {}",
+                        serviceException.getDebugInfo().encode(), cause);
+                  }
+                });
+          } else {
+            logPiveau.debug("index service disabled");
+          }
+          if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED)
+              == Boolean.TRUE) {
+            systemPipes(datasetHelper);
+          }
+          //Log to archive
+          if (archivingEnabled == Boolean.TRUE) {
+            logPiveau.info(
+                "[Dataset] [0] [updated] " + Piveau.presentAsRdfXml(datasetHelper.model()));
+          }
+          return result;
+        });
   }
 
   @Override
@@ -392,50 +414,52 @@ public class DatasetsServiceImpl implements DatasetsService {
       String catalogueId, Boolean createAccessURLs) {
     PiveauLogger logPiveau = piveauContext.extend(originalId).log();
 
-        DatasetHelper datasetHelper;
-        try {
-            datasetHelper = DatasetHelper.create(originalId, content, contentType, catalogueId);
-        } catch (Exception e) {
-            return Future.failedFuture(new ServiceException(400, e.getMessage()));
-          }
+    DatasetHelper datasetHelper;
+    try {
+      datasetHelper = DatasetHelper.create(originalId, content, contentType, catalogueId);
+    } catch (Exception e) {
+      return Future.failedFuture(new ServiceException(400, e.getMessage()));
+    }
 
-        return catalogueInfo(catalogueId)
-                .compose(catalogueInfo -> {
-                    datasetHelper.setCatalogueInfo(catalogueInfo);
-                    dgaValidation(datasetHelper);
-                    return getRecordHash(datasetHelper);
+    return catalogueInfo(catalogueId)
+        .compose(catalogueInfo -> {
+          datasetHelper.setCatalogueInfo(catalogueInfo);
+          dgaValidation(datasetHelper);
+          return getRecordHash(datasetHelper);
         })
         .compose(records -> {
           if (records.isEmpty()) {
-                        return createDataset(datasetHelper, createAccessURLs);
+            return createDataset(datasetHelper, createAccessURLs);
           } else {
             if (records.size() > 1) {
-                            removeDuplicates(datasetHelper, records);
+              removeDuplicates(datasetHelper, records);
             }
             if (records.isEmpty()) {
-                            return Future.failedFuture(new ServiceException(500, "Due to unclear duplicate detection removed completely"));
-                        }
-              JsonObject recordInfo = records.get(0);
-              String recordUri = recordInfo.getString("recordUri");
-              if (!DCATAPUriSchema.isRecordUriRef(recordUri)) {
-                return Future.failedFuture(new ServiceException(500,
-                    "Foreign catalogue record with dct:identifier detected"));
+              return Future.failedFuture(new ServiceException(500,
+                  "Due to unclear duplicate detection removed completely"));
+            }
+            JsonObject recordInfo = records.get(0);
+            String recordUri = recordInfo.getString("recordUri");
+            if (!DCATAPUriSchema.isRecordUriRef(recordUri)) {
+              return Future.failedFuture(new ServiceException(500,
+                  "Foreign catalogue record with dct:identifier detected"));
+            } else {
+              String oldHash = recordInfo.getString("hash");
+              String currentHash = datasetHelper.hash();
+              if (currentHash.equals(oldHash) && forceUpdates == Boolean.FALSE) {
+                return Future.failedFuture(new ServiceException(304, "Dataset is up to date"));
               } else {
-                String oldHash = recordInfo.getString("hash");
-                            String currentHash = datasetHelper.hash();
-                            if (currentHash.equals(oldHash) && forceUpdates == Boolean.FALSE) {
-                  return Future.failedFuture(new ServiceException(304, "Dataset is up to date"));
-                } else {
-                                return updateDataset(datasetHelper, recordUri);
+                return updateDataset(datasetHelper, recordUri);
               }
             }
           }
         })
-                .compose(this::store)
-                .recover(cause -> Future.failedFuture(mapCause(cause)))
+        .compose(this::store)
+        .recover(cause -> Future.failedFuture(mapCause(cause)))
         .onSuccess(status -> {
-                    if (!datasetHelper.getCatalogueInfo().getString(KEY_VISIBILITY, "").equals("hidden") && indexService != null) {
-                        index(datasetHelper)
+          if (!datasetHelper.getCatalogueInfo().getString(KEY_VISIBILITY, "").equals("hidden")
+              && indexService != null) {
+            index(datasetHelper)
                 .onFailure(cause -> {
                   if (cause instanceof ServiceException serviceException) {
                     logPiveau.error("Indexing failure: {}",
@@ -443,11 +467,90 @@ public class DatasetsServiceImpl implements DatasetsService {
                   }
                 });
           }
-                    if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED) == Boolean.TRUE) {
-                        systemPipes(datasetHelper);
+          if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED)
+              == Boolean.TRUE) {
+            systemPipes(datasetHelper);
           }
-                    if (archivingEnabled == Boolean.TRUE) {
-                        piveauContext.extend(datasetHelper.piveauId()).log().info("[Dataset] [{}] [{}] {}", catalogueId, status.getString("status"), Piveau.presentAsRdfXml(datasetHelper.model()));
+          if (archivingEnabled == Boolean.TRUE) {
+            piveauContext.extend(datasetHelper.piveauId()).log()
+                .info("[Dataset] [{}] [{}] {}", catalogueId, status.getString("status"),
+                    Piveau.presentAsRdfXml(datasetHelper.model()));
+          }
+        });
+  }
+
+  @Override
+  public Future<JsonObject> putDatasetOriginHealthData(String originalId, String content, String contentType,
+      String catalogueId, Boolean createAccessURLs, boolean isDatasetUpdate) {
+    PiveauLogger logPiveau = piveauContext.extend(originalId).log();
+
+    DatasetHelper datasetHelper;
+    try {
+      datasetHelper = DatasetHelper.create(originalId, content, contentType, catalogueId);
+    } catch (Exception e) {
+      return Future.failedFuture(new ServiceException(400, e.getMessage()));
+    }
+
+    return catalogueInfo(catalogueId)
+        .compose(catalogueInfo -> {
+          datasetHelper.setCatalogueInfo(catalogueInfo);
+          dgaValidation(datasetHelper);
+          return getRecordHash(datasetHelper);
+        })
+        .compose(records -> {
+          if (records.isEmpty()) {
+            // if no dataset was found in virtuoso, and we are on update request, we should notify
+            // with a 404 that the dataset was not found
+            if (isDatasetUpdate) {
+              return Future.failedFuture(new ServiceException(404, "Dataset not found"));
+            } else {
+              return createDataset(datasetHelper, createAccessURLs);
+            }
+          } else {
+            if (records.size() > 1) {
+              removeDuplicates(datasetHelper, records);
+            }
+            if (records.isEmpty()) {
+              return Future.failedFuture(new ServiceException(500,
+                  "Due to unclear duplicate detection removed completely"));
+            }
+            JsonObject recordInfo = records.get(0);
+            String recordUri = recordInfo.getString("recordUri");
+            if (!DCATAPUriSchema.isRecordUriRef(recordUri)) {
+              return Future.failedFuture(new ServiceException(500,
+                  "Foreign catalogue record with dct:identifier detected"));
+            } else {
+              String oldHash = recordInfo.getString("hash");
+              String currentHash = datasetHelper.hash();
+              if (currentHash.equals(oldHash) && forceUpdates == Boolean.FALSE) {
+                return Future.failedFuture(new ServiceException(304, "Dataset is up to date"));
+              } else {
+                return updateDataset(datasetHelper, recordUri);
+              }
+            }
+          }
+        })
+        .compose(this::store)
+        .recover(cause -> Future.failedFuture(mapCause(cause)))
+        .onSuccess(status -> {
+          if (!datasetHelper.getCatalogueInfo().getString(KEY_VISIBILITY, "").equals("hidden")
+              && indexService != null) {
+            index(datasetHelper)
+                .onFailure(cause -> {
+                  if (cause instanceof ServiceException serviceException) {
+                    logPiveau.error("Indexing failure: {}",
+                        serviceException.getDebugInfo().encode(), cause);
+                  }
+                });
+          }
+          if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED)
+              == Boolean.TRUE) {
+            systemPipes(datasetHelper);
+          }
+          if (archivingEnabled == Boolean.TRUE) {
+            piveauContext.extend(datasetHelper.piveauId()).log()
+                .info("[Dataset] [{}] [{}] {}", catalogueId, status.getString("status"),
+                    Piveau.presentAsRdfXml(datasetHelper.model()));
           }
         });
   }
@@ -455,9 +558,9 @@ public class DatasetsServiceImpl implements DatasetsService {
   @Override
   public Future<JsonObject> postDataset(String content, String contentType, String catalogueId,
       Boolean createAccessURLs) {
-      try {
-      return putDatasetOrigin(UUID.randomUUID().toString(), content, contentType, catalogueId,
-          createAccessURLs);
+    try {
+      return putDatasetOriginHealthData(UUID.randomUUID().toString(), content, contentType, catalogueId,
+          createAccessURLs, false);
     } catch (Exception e) {
       return Future.failedFuture(new ServiceException(500, "Internal Server Error"));
     }
@@ -465,21 +568,21 @@ public class DatasetsServiceImpl implements DatasetsService {
 
   @Override
   public Future<Void> deleteDataset(String id) {
-        return delete(DCATAPUriSchema.createForDataset(id));
+    return delete(DCATAPUriSchema.createForDataset(id));
   }
 
   @Override
   public Future<Void> deleteDatasetOrigin(String originId, String catalogueId) {
-        return catalogueManager.exist(catalogueId)
-          .compose(exists -> {
-                    if (exists == Boolean.TRUE) {
-              return datasetManager.identify(originId, catalogueId);
-            } else {
-              return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
-            }
-          })
-          .compose(pair -> delete(DCATAPUriSchema.parseUriRef(pair.getFirst().getURI())))
-                .recover(cause -> Future.failedFuture(mapCause(cause)));
+    return catalogueManager.exist(catalogueId)
+        .compose(exists -> {
+          if (exists == Boolean.TRUE) {
+            return datasetManager.identify(originId, catalogueId);
+          } else {
+            return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
+          }
+        })
+        .compose(pair -> delete(DCATAPUriSchema.parseUriRef(pair.getFirst().getURI())))
+        .recover(cause -> Future.failedFuture(mapCause(cause)));
   }
 
   private Future<Void> delete(DCATAPUriRef schema) {
@@ -495,7 +598,8 @@ public class DatasetsServiceImpl implements DatasetsService {
               }
             });
           }
-                    if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED) == Boolean.TRUE) {
+          if (validationConfig.getBoolean(KEY_ENABLED, Defaults.VALIDATOR_ENABLED)
+              == Boolean.TRUE) {
             tripleStore.deleteGraph(schema.getMetricsGraphName())
                 .onFailure(cause -> logger.warn("Delete metrics graph", cause));
 
@@ -507,47 +611,48 @@ public class DatasetsServiceImpl implements DatasetsService {
   }
 
   @Override
-    public Future<JsonObject> indexDataset(String datasetId, String catalogueId) {
+  public Future<JsonObject> indexDataset(String datasetId, String catalogueId) {
     if (indexService == null) {
       return Future.failedFuture("Indexing service disabled");
     }
-        AtomicReference<JsonObject> catalogueInfo = new AtomicReference<>();
+    AtomicReference<JsonObject> catalogueInfo = new AtomicReference<>();
     String contentType = RDFMimeTypes.NTRIPLES;
 
-        DCATAPUriRef datasetUriRef = DCATAPUriSchema.createForDataset(datasetId);
+    DCATAPUriRef datasetUriRef = DCATAPUriSchema.createForDataset(datasetId);
 
-        return datasetManager.existGraph(datasetUriRef.getGraphName())
-                .compose(exists -> {
-                    if (!exists) {
-                        return Future.failedFuture(new ServiceException(404, "Dataset not found"));
-                    } else {
-                        return catalogueInfo(catalogueId);
-                    }
+    return datasetManager.existGraph(datasetUriRef.getGraphName())
+        .compose(exists -> {
+          if (!exists) {
+            return Future.failedFuture(new ServiceException(404, "Dataset not found"));
+          } else {
+            return catalogueInfo(catalogueId);
+          }
         })
-                .compose(info -> {
-                    catalogueInfo.set(info);
-                    return datasetManager.getGraph(datasetUriRef.getGraphName());
-                })
-                .compose(dataset -> {
-                    DatasetHelper helper;
-                    try {
-                        helper = DatasetHelper.create(dataset);
-                    } catch (Exception e) {
-                        logger.error("Error parsing Dataset", e);
-                        return Future.failedFuture(new ServiceException(400, "Could not decode body with Content-Type " + contentType + ": " + e.getMessage()));
-                    }
-                    JsonObject indexObject = Indexing.indexingDataset(
-                            helper.resource(),
-                            helper.recordResource(),
-                            catalogueId,
-                            catalogueInfo.get().getString("langCode"));
-                    return Future.future(promise -> indexService.addDatasetPut(indexObject, ir -> {
-                if (ir.failed()) {
-                  promise.fail(ir.cause());
-                } else {
-                            promise.complete(ir.result());
-                }
-                    }));
+        .compose(info -> {
+          catalogueInfo.set(info);
+          return datasetManager.getGraph(datasetUriRef.getGraphName());
+        })
+        .compose(dataset -> {
+          DatasetHelper helper;
+          try {
+            helper = DatasetHelper.create(dataset);
+          } catch (Exception e) {
+            logger.error("Error parsing Dataset", e);
+            return Future.failedFuture(new ServiceException(400,
+                "Could not decode body with Content-Type " + contentType + ": " + e.getMessage()));
+          }
+          JsonObject indexObject = Indexing.indexingDataset(
+              helper.resource(),
+              helper.recordResource(),
+              catalogueId,
+              catalogueInfo.get().getString("langCode"));
+          return Future.future(promise -> indexService.addDatasetPut(indexObject, ir -> {
+            if (ir.failed()) {
+              promise.fail(ir.cause());
+            } else {
+              promise.complete(ir.result());
+            }
+          }));
         });
   }
 
@@ -555,12 +660,12 @@ public class DatasetsServiceImpl implements DatasetsService {
   public Future<JsonObject> getDataUploadInformation(String datasetId, String catalogueId,
       String resultDataset) {
     try {
-            DatasetHelper helper = DatasetHelper.create(resultDataset, Lang.NTRIPLES.getHeaderString());
-            JsonArray uploadResponse = dataUploadConnector.getResponse(helper);
-            JsonObject result = new JsonObject();
-            result.put("status", "success");
-            result.put("distributions", uploadResponse);
-            return Future.succeededFuture(result);
+      DatasetHelper helper = DatasetHelper.create(resultDataset, Lang.NTRIPLES.getHeaderString());
+      JsonArray uploadResponse = dataUploadConnector.getResponse(helper);
+      JsonObject result = new JsonObject();
+      result.put("status", "success");
+      result.put("distributions", uploadResponse);
+      return Future.succeededFuture(result);
     } catch (Exception e) {
       return Future.failedFuture(new ServiceException(500, "Internal Server Error"));
     }
@@ -614,13 +719,15 @@ public class DatasetsServiceImpl implements DatasetsService {
   }
 
   private Future<DatasetHelper> index(DatasetHelper helper) {
-        PiveauLogger log = piveauContext.extend(helper.piveauId()).log();
+    PiveauLogger log = piveauContext.extend(helper.piveauId()).log();
     return Future.future(promise -> {
       try {
-                JsonObject indexMessage = Indexing.indexingDataset(helper.resource(), helper.recordResource(), helper.catalogueId(), helper.getCatalogueInfo().getString("langCode", "en"));
-                if (log.isTraceEnabled()) {
-                    log.trace("indexing dataset: {}", indexMessage.encodePrettily());
-                }
+        JsonObject indexMessage = Indexing.indexingDataset(helper.resource(),
+            helper.recordResource(), helper.catalogueId(),
+            helper.getCatalogueInfo().getString("langCode", "en"));
+        if (log.isTraceEnabled()) {
+          log.trace("indexing dataset: {}", indexMessage.encodePrettily());
+        }
         indexService.addDatasetPut(indexMessage, ar -> {
           if (ar.succeeded()) {
             promise.complete(helper);
@@ -629,7 +736,7 @@ public class DatasetsServiceImpl implements DatasetsService {
           }
         });
       } catch (Exception e) {
-                log.error("indexing dataset failed", e);
+        log.error("indexing dataset failed", e);
         promise.fail(new ServiceException(500, e.getMessage()));
       }
     });
@@ -642,7 +749,7 @@ public class DatasetsServiceImpl implements DatasetsService {
           .put("originalId", helper.originId())
           .put("catalogue", helper.catalogueId())
           .put("identifier", helper.piveauId())
-                    .put("source", helper.getCatalogueInfo().getString("sourceType"));
+          .put("source", helper.getCatalogueInfo().getString("sourceType"));
 
       Model model = HubRepo.extractDatasetModel(helper.model());
       Dataset dataset = DatasetFactory.create(model);
@@ -691,17 +798,20 @@ public class DatasetsServiceImpl implements DatasetsService {
           datasetHelper.update(model, recordUriRef);
 
           if (translationService != null) {
-                        DatasetHelper helper = DatasetHelper.create(Piveau.presentAs(model, Lang.NTRIPLES), Lang.NTRIPLES.getContentType().getContentTypeStr());
-                        return Future.<DatasetHelper>future(promise -> translationService.initializeTranslationProcess(datasetHelper, helper, false, promise))
+            DatasetHelper helper = DatasetHelper.create(Piveau.presentAs(model, Lang.NTRIPLES),
+                Lang.NTRIPLES.getContentType().getContentTypeStr());
+            return Future.<DatasetHelper>future(
+                    promise -> translationService.initializeTranslationProcess(datasetHelper, helper,
+                        false, promise))
                 .otherwise(datasetHelper);
           } else {
             return Future.succeededFuture(datasetHelper);
           }
         })
-                .recover(cause ->
-                        Future.failedFuture(new ServiceException(500, cause.getMessage(), new JsonObject()
-              .put("recordUriRef", recordUriRef)
-                                .put("datasetHelper", datasetHelper.toJson()))));
+        .recover(cause ->
+            Future.failedFuture(new ServiceException(500, cause.getMessage(), new JsonObject()
+                .put("recordUriRef", recordUriRef)
+                .put("datasetHelper", datasetHelper.toJson()))));
   }
 
   private Future<String> findPiveauId(String id, int counter) {
@@ -711,13 +821,14 @@ public class DatasetsServiceImpl implements DatasetsService {
     } else {
       checkId.set(id);
     }
-        String askQuery = sparqlQueryPool.format("askPiveauId", DCATAPUriSchema.createForDataset(checkId.get()).getUriRef());
-        if (askQuery == null) {
-            return Future.failedFuture(new ServiceException(500, "Missing query from pool"));
-        }
+    String askQuery = sparqlQueryPool.format("askPiveauId",
+        DCATAPUriSchema.createForDataset(checkId.get()).getUriRef());
+    if (askQuery == null) {
+      return Future.failedFuture(new ServiceException(500, "Missing query from pool"));
+    }
     return tripleStore.ask(askQuery)
         .compose(exist -> {
-                    if (exist == Boolean.TRUE) {
+          if (exist == Boolean.TRUE) {
             return findPiveauId(id, counter + 1);
           } else {
             return Future.succeededFuture(checkId.get());
@@ -731,17 +842,18 @@ public class DatasetsServiceImpl implements DatasetsService {
     }
 
     DCATAPUriRef catalogueUriRef = DCATAPUriSchema.createForCatalogue(catalogueId);
-        String query = sparqlQueryPool.format("catalogueQuery", catalogueUriRef.getGraphName(), catalogueUriRef.getUriRef());
-        if (query == null) {
-            return Future.failedFuture(new ServiceException(500, "Missing query from pool"));
-        }
+    String query = sparqlQueryPool.format("catalogueQuery", catalogueUriRef.getGraphName(),
+        catalogueUriRef.getUriRef());
+    if (query == null) {
+      return Future.failedFuture(new ServiceException(500, "Missing query from pool"));
+    }
 
     return tripleStore.select(query)
         .map(resultSet -> {
           if (resultSet.hasNext()) {
             JsonObject result = new JsonObject();
             QuerySolution solution = resultSet.next();
-                        result.put("title", solution.get("title").asLiteral().getValue());
+            result.put("title", solution.get("title").asLiteral().getValue());
             if (solution.contains("lang")) {
               Concept concept = Languages.INSTANCE.getConcept(solution.getResource("lang"));
               if (concept != null) {
@@ -760,15 +872,15 @@ public class DatasetsServiceImpl implements DatasetsService {
             if (solution.contains("super")) {
               result.put("superCatalogue", solution.getResource("super").getURI());
             }
-                        if (solution.contains(KEY_VISIBILITY)) {
-                            result.put(KEY_VISIBILITY, solution.getResource(KEY_VISIBILITY).getLocalName());
+            if (solution.contains(KEY_VISIBILITY)) {
+              result.put(KEY_VISIBILITY, solution.getResource(KEY_VISIBILITY).getLocalName());
             }
-                        if (result.isEmpty()) {
-                            throw new ServiceException(404, "Catalogue not found");
-                        } else {
-            cache.putIfAbsent(catalogueId, result);
-            return result;
-                        }
+            if (result.isEmpty()) {
+              throw new ServiceException(404, "Catalogue not found");
+            } else {
+              cache.putIfAbsent(catalogueId, result);
+              return result;
+            }
           } else {
             throw new ServiceException(404, "Catalogue not found");
           }
@@ -786,50 +898,51 @@ public class DatasetsServiceImpl implements DatasetsService {
     } else if (cause.getMessage().startsWith("Not found")) {
       return new ServiceException(404, "Dataset not found");
     } else if (cause instanceof TripleStoreException tripleStoreException) {
-            return new ServiceException(tripleStoreException.getCode(), tripleStoreException.getMessage(),
+      return new ServiceException(tripleStoreException.getCode(), tripleStoreException.getMessage(),
           new JsonObject().put("query", tripleStoreException.getQuery()));
     } else {
       return new ServiceException(500, cause.getMessage());
     }
   }
 
-    private void prepareDataset(Model dataset) {
-        changeVirtuType(dataset);
+  private void prepareDataset(Model dataset) {
+    changeVirtuType(dataset);
 
-        Resource recordResource = Piveau.findRecordAsResource(dataset);
-        if (recordResource != null) {
-            Model recordModel = Piveau.extractAsModel(recordResource);
-            dataset.remove(recordModel);
-        }
-
-        Prefixes.setNsPrefixesFiltered(dataset);
+    Resource recordResource = Piveau.findRecordAsResource(dataset);
+    if (recordResource != null) {
+      Model recordModel = Piveau.extractAsModel(recordResource);
+      dataset.remove(recordModel);
     }
 
-    private void removeDuplicates(DatasetHelper datasetHelper, List<JsonObject> recordHashes) {
-        Iterator<JsonObject> it = recordHashes.iterator();
-        while (it.hasNext()) {
-            JsonObject recordHash = it.next();
-            DCATAPUriRef uriRef = DCATAPUriSchema.parseUriRef(recordHash.getString("recordUri"));
+    Prefixes.setNsPrefixesFiltered(dataset);
+  }
 
-            if (!uriRef.getId().equals(Piveau.asNormalized(datasetHelper.originId()))) {
-                delete(uriRef);
-                it.remove();
-            }
-        }
-    }
+  private void removeDuplicates(DatasetHelper datasetHelper, List<JsonObject> recordHashes) {
+    Iterator<JsonObject> it = recordHashes.iterator();
+    while (it.hasNext()) {
+      JsonObject recordHash = it.next();
+      DCATAPUriRef uriRef = DCATAPUriSchema.parseUriRef(recordHash.getString("recordUri"));
 
-    private void dgaValidation(DatasetHelper datasetHelper) {
-        JsonObject catalogueInfo = datasetHelper.getCatalogueInfo();
-        if (catalogueInfo.containsKey("superCatalogue")
-                && catalogueInfo.getString("superCatalogue").equals(DGA_SUPER_CATALOGUE)) {
-            Resource datasetResource = datasetHelper.model()
-                    .listResourcesWithProperty(RDF.type, DCAT.Dataset).toList().get(0);
-            JsonObject report = AddOns.validationReport(datasetResource);
-            if (!report.isEmpty()) {
-                // log violations here
-                dgaContext.extend(datasetHelper.catalogueId() + "/" + datasetHelper.originId()).log().warn(report.encode());
-            }
-        }
+      if (!uriRef.getId().equals(Piveau.asNormalized(datasetHelper.originId()))) {
+        delete(uriRef);
+        it.remove();
+      }
     }
+  }
+
+  private void dgaValidation(DatasetHelper datasetHelper) {
+    JsonObject catalogueInfo = datasetHelper.getCatalogueInfo();
+    if (catalogueInfo.containsKey("superCatalogue")
+        && catalogueInfo.getString("superCatalogue").equals(DGA_SUPER_CATALOGUE)) {
+      Resource datasetResource = datasetHelper.model()
+          .listResourcesWithProperty(RDF.type, DCAT.Dataset).toList().get(0);
+      JsonObject report = AddOns.validationReport(datasetResource);
+      if (!report.isEmpty()) {
+        // log violations here
+        dgaContext.extend(datasetHelper.catalogueId() + "/" + datasetHelper.originId()).log()
+            .warn(report.encode());
+      }
+    }
+  }
 
 }

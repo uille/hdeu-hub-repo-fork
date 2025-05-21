@@ -48,6 +48,8 @@ public interface DatasetsService {
 
     Future<JsonObject> putDatasetOrigin(String id, String content, String contentType, String catalogueId, Boolean upload);
 
+    Future<JsonObject> putDatasetOriginHealthData(String id, String content, String contentType, String catalogueId, Boolean upload, boolean isDatasetUpdate);
+
     Future<JsonObject> postDataset(String content, String contentType, String catalogueId, Boolean createAccessURLs);
 
     Future<Void> deleteDatasetOrigin(String originId, String catalogueId);

@@ -30,6 +30,8 @@ import io.vertx.ext.web.validation.RequestParameters;
 import io.vertx.ext.web.validation.ValidationHandler;
 import io.vertx.serviceproxy.ServiceException;
 import java.util.Base64;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.jetbrains.annotations.NotNull;
@@ -52,9 +54,9 @@ public class DatasetHandler {
   private static final String RESULT_STATUS_KEY = "status";
   private static final String RESULT_STATUS_CREATED = "created";
   private static final String RESULT_STATUS_UPDATED = "updated";
-  private static final String DATASET_ITB_VALIDATION_ERROR = "DATASET_ITB_VALIDATION_ERROR";
+  private static final String DATASET_ITB_VALIDATION_ERROR_0101 = "DATASET_ITB_VALIDATION_ERROR_0101";
+  private static final String DATASET_ITB_VALIDATION_ERROR_0102 = "DATASET_ITB_VALIDATION_ERROR_0102";
   private static final String DATASET_ITB_UNEXPECTED_ERROR = "DATASET_ITB_UNEXPECTED_ERROR";
-  private static final String ITB_COMMUNICATION_ERROR = "ITB_COMMUNICATION_ERROR";
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -245,7 +247,7 @@ public class DatasetHandler {
       return;
     }
 
-    datasetsService.putDatasetOrigin(originId, content, contentType, catalogueId, false)
+    datasetsService.putDatasetOriginHealthData(originId, content, contentType, catalogueId, false, true)
         .onSuccess(status -> {
           switch (status.getString(RESULT_STATUS_KEY)) {
             case RESULT_STATUS_CREATED -> context.response().setStatusCode(201)
@@ -286,12 +288,26 @@ public class DatasetHandler {
 
       boolean hasErrors = itbReport.getJsonObject("counters").getInteger("nrOfErrors", 0) > 0;
 
-      if (hasErrors) {
+      if (Objects.nonNull(itbReport.getString(DATASET_ITB_VALIDATION_ERROR_0102))) {
+        // ITB validation error, ERR_HD_0102 Unexpected characters
         logger.error(
-            DATASET_ITB_VALIDATION_ERROR + " when uploading dataset for catalogue with id '{}': {}",
+            DATASET_ITB_VALIDATION_ERROR_0102
+                + " when uploading dataset for catalogue with id '{}': {}",
+            catalogueId,
+            itbReport.getString("message"));
+        JsonObject errorMessage = new JsonObject().put("error", DATASET_ITB_VALIDATION_ERROR_0102)
+            .put("message", itbReport.getString("message"));
+
+        HubRepo.failureResponse(context, new ServiceException(400, errorMessage.encodePrettily()));
+        return true;
+      } else if (hasErrors) {
+        // ITB validation error, ERR_HD_0101 Invalid or missing fields
+        logger.error(
+            DATASET_ITB_VALIDATION_ERROR_0101
+                + " when uploading dataset for catalogue with id '{}': {}",
             catalogueId,
             itbReport.encodePrettily());
-        JsonObject errorMessage = new JsonObject().put("error", DATASET_ITB_VALIDATION_ERROR)
+        JsonObject errorMessage = new JsonObject().put("error", DATASET_ITB_VALIDATION_ERROR_0101)
             .put("message", itbReport);
 
         HubRepo.failureResponse(context, new ServiceException(400, errorMessage.encodePrettily()));
@@ -497,12 +513,21 @@ public class DatasetHandler {
     WebClient itbValidatorWebClient = WebClient.create(Vertx.vertx());
     String itbValidatorApiEndpoint = System.getenv(Constants.ENV_PIVEAU_ITB_VALIDATOR_ENDPOINT);
 
-    // Set a timeout value for the request
-    int timeoutInMillis = 5000; // 5 seconds
+    // Set a default timeout of 10 seconds if the environment variable is not set
+    int timeoutInMillis =
+        Optional.ofNullable(System.getenv(Constants.ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT))
+            .map(s -> {
+              try {
+                return Integer.parseInt(s);
+              } catch (NumberFormatException e) {
+                return 10000;
+              }
+            })
+            .orElse(10000);
 
     itbValidatorWebClient.postAbs(itbValidatorApiEndpoint)
         .timeout(
-            timeoutInMillis) // Ensure request times out if health categories vocabulary service is unresponsive
+            timeoutInMillis) // Ensure request times out if service is unresponsive
         .sendJsonObject(requestBody, ar -> {
           if (ar.failed()) {
             Throwable cause = ar.cause();
@@ -514,6 +539,19 @@ public class DatasetHandler {
           }
 
           var response = ar.result();
+
+          // catch the case when the rdf has structural errors where ITB returns a 500 status code
+          // and a response body with a message property starting with "An error occurred while reading the provided content"
+          if (response.statusCode() == 500 && Objects.nonNull(response.bodyAsJsonObject())
+              && response.bodyAsJsonObject().getString("message", "").trim()
+              .startsWith("An error occurred while reading the provided content")) {
+
+            String errorMessage = response.bodyAsJsonObject().getString("message");
+            future.complete(new JsonObject()
+                .put(DATASET_ITB_VALIDATION_ERROR_0102, errorMessage));
+            return;
+          }
+
           if (response.statusCode() != 200) {
             String errorMessage = response.statusCode() + ": " + response.statusMessage() + ", " +
                 (response.bodyAsString() != null ? response.bodyAsString() : "(No response body)");

@@ -61,6 +61,8 @@ public final class Constants {
 
   public static final String ENV_HUB_REPO_HEALTH_CATEGORIES_VOCABULARY_BASE_URL = "HUB_REPO_HEALTH_CATEGORIES_VOCABULARY_BASE_URL";
 
+  public static final String ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT = "HEALTHDATA_ENDPOINTS_TIMEOUT";
+
   // Authentication via JWT
   public static final String AUTHENTICATION_TYPE = "auth";
   public static final String JWT_AUTH = "jwtAuth";

@@ -7,8 +7,10 @@
 - [Configuration](#configuration)
 - [AWS Secrets Manager Integration](#aws-secrets-manager-integration)
   - [How It Works](#how-it-works)
-  - [SecretProviderClass Definition](#secretproviderclass-definition)
-  - [Mapping AWS Secrets to Kubernetes Secrets](#mapping-aws-secrets-to-kubernetes-secrets)
+  - [Enabling the Integration](#enabling-the-integration)
+  - [Example Configuration](#example-configuration)
+  - [SecretProviderClass Template (Auto-Generated)](#secretproviderclass-template-auto-generated)
+  - [Mapping Overview](#mapping-overview)
   - [How to Use](#how-to-use)
 - [License](#license)
 
@@ -50,9 +52,26 @@ This Helm chart supports integration with **AWS Secrets Manager** using the **Se
 - The **SecretProviderClass** defines which secrets to retrieve and how they are mapped.
 - The retrieved secrets are automatically created as **Kubernetes secrets** and mounted into the application as environment variables.
 
-### SecretProviderClass Definition
+### Enabling the Integration
 
-The following **SecretProviderClass** is created when `aws.enabled` is set to `true`:
+To enable AWS Secrets Manager integration, configure your `values.yaml` as follows:
+
+```yaml
+aws:
+  enabled: true
+  secrets:
+    provider: aws
+    objects: []
+```
+
+- `enabled`: Enables or disables secret integration.
+- `provider`: The CSI provider (aws).
+- `objects`: A list of secrets and their keys to fetch from AWS Secrets Manager.
+
+### Example Configuration
+
+Here's an example of how to define secrets in your values.yaml file:
+
 
 ```yaml
 apiVersion: secrets-store.csi.x-k8s.io/v1
@@ -122,7 +141,87 @@ spec:
         key: hub_store_data_upload_api_key
 ```
 
-### Mapping AWS Secrets to Kubernetes Secrets
+### SecretProviderClass Template (Auto-Generated)
+When `aws.enabled: true`, the Helm chart generates a `SecretProviderClass` similar to this:
+
+```yaml
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: <release-name>-spc
+spec:
+  provider: aws
+  parameters:
+    objects: |
+      - objectName: "HEALTHDATA_VIRTUOSO_SECRET"
+        objectType: "secretsmanager"
+        jmesPath:
+          - path: username
+            objectAlias: username
+          - path: password
+            objectAlias: password
+          - path: virtuoso_config_url
+            objectAlias: virtuoso_config_url
+          - path: dba_password
+            objectAlias: dba_password
+      - objectName: "HEALTHDATA_SHADOW_VIRTUOSO_SECRET"
+        objectType: "secretsmanager"
+        jmesPath:
+          - path: shadow_username
+            objectAlias: shadow_username
+          - path: shadow_password
+            objectAlias: shadow_password
+          - path: shadow_virtuoso_config_url
+            objectAlias: shadow_virtuoso_config_url
+          - path: shadow_dba_password
+            objectAlias: shadow_dba_password
+      - objectName: "HEALTHDATA_API_KEYS"
+        objectType: "secretsmanager"
+        jmesPath:
+          - path: hub_repo_api_key
+            objectAlias: hub_repo_api_key
+          - path: hub_search_service_api_key
+            objectAlias: hub_search_service_api_key
+          - path: hub_store_data_upload_api_key
+            objectAlias: hub_store_data_upload_api_key
+  secretObjects:
+    - secretName: <release-name>-secrets
+      type: Opaque
+      data:
+      - objectName: username
+        key: username
+      - objectName: password
+        key: password
+      - objectName: virtuoso_config_url
+        key: virtuoso_config_url
+      - objectName: shadow_username
+        key: shadow_username
+      - objectName: shadow_password
+        key: shadow_password
+      - objectName: shadow_virtuoso_config_url
+        key: shadow_virtuoso_config_url
+      - objectName: dba_password
+        key: dba_password
+      - objectName: shadow_dba_password
+        key: shadow_dba_password
+      - objectName: hub_repo_api_key
+        key: hub_repo_api_key
+      - objectName: hub_search_service_api_key
+        key: hub_search_service_api_key
+      - objectName: hub_store_data_upload_api_key
+        key: hub_store_data_upload_api_key
+```
+
+### Mapping Overview
+
+Each entry in the `objects` list defines the mapping from AWS Secrets Manager to Kubernetes secrets.
+
+| AWS Secret Name              | AWS Key (path)                    | Kubernetes Secret Key            |
+|------------------------------|-----------------------------------|----------------------------------|
+| `name:` from `objects`       | `path:` from `jmesPath`           | `objectAlias:` value             |
+|                              |                                   |
+
+Below is a full example of mapping:
 
 | AWS Secret Name                     | AWS Key (path)              | Kubernetes Secret Key          |
 |--------------------------------------|-----------------------------------|--------------------------------|

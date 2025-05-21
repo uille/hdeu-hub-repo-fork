@@ -135,7 +135,7 @@ config:
   # SHADOW_VIRTUOSO_CONFIG_URL: hdeu-hub-repo-shadow-virtuoso.default.svc.cluster.local:9890
   # SHADOW_VIRTUOSO_CONFIG_USER: dba
   # SHADOW_VIRTUOSO_CONFIG_PASS: dba
-  # ITB_VALIDATOR_ENDPOINT: http://hdeu-itb-rdf-validator.default.svc.cluster.local/shacl/ehds/api/validate
+# ITB_VALIDATOR_ENDPOINT: http://hdeu-itb-rdf-validator.default.svc.cluster.local/shacl/ehds/api/validate
 
 ## AWS Secrets Manager Integration
 ##
@@ -167,10 +167,10 @@ config:
 ##
 ## Enables AWS Secrets Manager for retrieving environment variables
 aws:
-  enabled: false
-## Defines AWS as the secret management provider
-secrets:
-  provider: aws
+  enabled: true
+  secrets:
+    provider: aws
+    objects: []
 
 ## HDEU HUB REPO configuration that stored in a Secret
 configJson:
@@ -180,7 +180,7 @@ configJson:
   PIVEAU_HUB_CORS_DOMAINS:
     []
     # Example:
-    # PIVEAU_HUB_CORS_DOMAINS: ["http://hdeu-hub-ui.example.com", "localhost", "example.com"]
+  # PIVEAU_HUB_CORS_DOMAINS: ["http://hdeu-hub-ui.example.com", "localhost", "example.com"]
   greeting: "You know, for metadata!"
   ## @param PIVEAU_HUB_API_KEY The API key for the HDEU hub repo
   PIVEAU_HUB_API_KEY: ""
@@ -337,7 +337,7 @@ resources:
   #   memory: 128Mi
   # requests:
   #   cpu: 100m
-  #   memory: 128Mi
+#   memory: 128Mi
 
 ## Autoscaling configuration Dependency HPA
 ## ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/

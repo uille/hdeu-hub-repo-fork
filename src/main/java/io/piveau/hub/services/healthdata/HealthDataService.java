@@ -23,6 +23,7 @@ import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import java.io.StringReader;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
@@ -65,8 +66,17 @@ public class HealthDataService {
 
     String endpoint = this.healthCategoriesVocabularyBaseUrl + healthCategory;
 
-    // Set a timeout value for the request
-    int timeoutInMillis = 5000; // 5 seconds
+    // Set a default timeout of 10 seconds if the environment variable is not set
+    int timeoutInMillis =
+        Optional.ofNullable(System.getenv(Constants.ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT))
+            .map(s -> {
+              try {
+                return Integer.parseInt(s);
+              } catch (NumberFormatException e) {
+                return 10000;
+              }
+            })
+            .orElse(10000);
 
     client.getAbs(endpoint)
         .timeout(
@@ -121,7 +131,18 @@ public class HealthDataService {
     }
 
     String endpoint = "https://www.wikidata.org/w/api.php";
-    int timeoutInMillis = 5000; // 5 seconds timeout
+
+    // Set a default timeout of 10 seconds if the environment variable is not set
+    int timeoutInMillis =
+        Optional.ofNullable(System.getenv(Constants.ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT))
+            .map(s -> {
+              try {
+                return Integer.parseInt(s);
+              } catch (NumberFormatException e) {
+                return 10000;
+              }
+            })
+            .orElse(10000);
 
     client.getAbs(endpoint)
         .addQueryParam("action", "wbgetentities")
