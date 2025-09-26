@@ -27,6 +27,7 @@ import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
@@ -45,7 +46,7 @@ import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Testing the Distributions service")
+@DisplayName("DistributionsServiceImplTest - Testing the Distributions service")
 @ExtendWith(VertxExtension.class)
 public class DistributionsServiceImplTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(DistributionsServiceImplTest.class);
@@ -74,6 +75,79 @@ public class DistributionsServiceImplTest {
                 .onSuccess(id -> testContext.completeNow())
                 .onFailure(testContext::failNow);
     }
+
+    @Test
+    void testListDatasetDistributionsIdentifiers(Vertx vertx, VertxTestContext vertxTestContext) {
+        distributionsService.listDatasetDistributions("test-dataset", "identifiers", RDFMimeTypes.JSONLD)
+                .onSuccess(result -> {
+                    vertxTestContext.verify(() -> {
+                        assertNotNull(result);
+                        JsonArray array = new JsonArray(result);
+                        assertFalse(array.isEmpty(), "The identifiers list should not be empty");
+                        // For more specific validation:
+                        assertTrue(array.contains("02e103b1-ffc4-464d-8013-de1c435a5375"),
+                                "Expected known distribution identifier");
+                    });
+                    vertxTestContext.completeNow();
+                })
+                .onFailure(vertxTestContext::failNow);
+    }
+
+    @Test
+    void testListDatasetDistributionsUriRefs(Vertx vertx, VertxTestContext vertxTestContext) {
+        distributionsService.listDatasetDistributions("test-dataset", "uriRefs", RDFMimeTypes.JSONLD)
+                .onSuccess(result -> {
+                    vertxTestContext.verify(() -> {
+                        assertNotNull(result);
+                        JsonArray array = new JsonArray(result);
+                        assertFalse(array.isEmpty(), "The uriRefs list should not be empty");
+                        assertTrue(array.stream().anyMatch(obj -> obj.toString().contains("/distribution/")),
+                                "Should contain URI references to distributions");
+                    });
+                    vertxTestContext.completeNow();
+                })
+                .onFailure(vertxTestContext::failNow);
+    }
+
+    @Test
+    void testListDatasetDistributionsOriginalIdsEmpty(Vertx vertx, VertxTestContext vertxTestContext) {
+        distributionsService.listDatasetDistributions("test-dataset", "originalIds", RDFMimeTypes.JSONLD)
+                .onSuccess(result -> {
+                    vertxTestContext.verify(() -> {
+                        assertNotNull(result, "Result should not be null");
+
+                        JsonArray array = new JsonArray(result);
+                        System.out.println("Original IDs: " + array.encodePrettily());
+
+                        // Assert list is empty
+                        assertTrue(array.isEmpty(), "The originalIds list is empty");
+
+                    });
+                    vertxTestContext.completeNow();
+                })
+                .onFailure(err -> {
+                    err.printStackTrace();
+                    vertxTestContext.failNow(err);
+                });
+    }
+
+    @Test
+    void testListDatasetDistributionsMetadata(Vertx vertx, VertxTestContext vertxTestContext) {
+        distributionsService.listDatasetDistributions("test-dataset", "metadata", RDFMimeTypes.JSONLD)
+                .onSuccess(result -> {
+                    vertxTestContext.verify(() -> {
+                        assertNotNull(result);
+                        assertDoesNotThrow(() -> {
+                            Model model = Piveau.toModel(result.getBytes(), RDFMimeTypes.JSONLD);
+                            assertFalse(model.isEmpty(), "Metadata model should not be empty");
+                        });
+                    });
+                    vertxTestContext.completeNow();
+                })
+                .onFailure(vertxTestContext::failNow);
+    }
+
+
 
     @Test
     void testGetDistribution(Vertx vertx, VertxTestContext vertxTestContext) {

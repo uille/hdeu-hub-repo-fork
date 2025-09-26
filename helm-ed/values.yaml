@@ -21,7 +21,7 @@
 replicaCount: 1
 
 image:
-  repository: code.europa.eu:4567/healthdataeu-private/healthdataeu-eu-dataset-catalogue/hdeu-hub-repo
+  repository: registry.sdlc.webcloud.ec.europa.eu/ehds/healthdataeu-eu-dataset-catalogue/hdeu-hub-repo
   ## Specify a imagePullPolicy
   ## ref: http://kubernetes.io/docs/concepts/containers/images/#pre-pulled-images
   ##
@@ -156,6 +156,7 @@ config:
 ## - `HUB_REPO_API_KEY` (API key for HDEU Hub Repo service)
 ## - `HUB_SEARCH_SERVICE_API_KEY` (API key for HDEU Hub Search Service)
 ## - `HUB_STORE_DATA_UPLOAD_API_KEY` (API key for HDEU Hub Store service)
+## - `PIVEAU_TRANSLATION_SERVICE` (API key for HDEU Hub Translation Service)
 ##
 ## These secrets are referenced in the deployment as Kubernetes SecretKeyRefs:
 ## @param secrets.provider Specifies AWS as the secrets management provider.
@@ -170,7 +171,12 @@ aws:
   enabled: true
   secrets:
     provider: aws
+    # List of AWS Secrets Manager objects to be mounted via the CSI driver.
+    # Each object defines its name, type, and the specific secret keys (via jmesPath) to extract.
     objects: []
+  # Maps environment variable names to the corresponding secret keys from the mounted Kubernetes secret,
+  # used to populate container environment variables.
+  envSecretsMap: {}
 
 ## HDEU HUB REPO configuration that stored in a Secret
 configJson:
@@ -199,6 +205,13 @@ configJson:
     recordContext: "set/record/"
     # Example:
     # baseUri: "http://hdeu-hub-ui.example.com/"
+  ## Enable Piveau profile
+  PIVEAU_FEATURE_FLAGS:
+    piveau_profile: true
+  ## Set Piveau profile path
+  PIVEAU_PROFILE:
+    type: "directory"
+    path: "/usr/verticles/profiles/healthdcatap"
   PIVEAU_HUB_VALIDATOR:
     enabled: false
     metricsPipeName: "metrics"
@@ -227,12 +240,14 @@ configJson:
   PIVEAU_HUB_XML_DECLARATION: false
   ## Translation configuration
   ## @param enable Enable the machine translation service
+  ## @param Translation Api Key
   ## @param accepted_languages Target languages to be translated
   ## @param translation_service_url The URL of the translation service
   ## @param callback_url The callback URL for the translation service
   ##
   PIVEAU_TRANSLATION_SERVICE:
     enable: false
+    api_key: ""
     accepted_languages: []
     translation_service_url: ""
     callback_url: ""
@@ -389,6 +404,7 @@ virtuoso:
     service: 8890
     default: 1111
   ## @param virtuoso.dbaPassword Password for the DBA user (should be set for security)
+  ## if aws.enabled is true, the password will be retrieved from AWS Secrets Manager
   ##
   dbaPassword:
   ## Virtuoso Persistence Storage

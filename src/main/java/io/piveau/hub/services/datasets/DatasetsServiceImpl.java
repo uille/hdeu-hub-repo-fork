@@ -783,10 +783,13 @@ public class DatasetsServiceImpl implements DatasetsService {
               });
 
           if (translationService != null) {
+            logger.info("Initialize translation process for dataset {}", datasetHelper.piveauId());
             return Future.<DatasetHelper>future(
                 promise -> translationService.initializeTranslationProcess(datasetHelper, null,
                     false, promise)).otherwise(datasetHelper);
           } else {
+            logger.info("Translation service not available, skipping translation process for dataset {}",
+                datasetHelper.piveauId());
             return Future.succeededFuture(datasetHelper);
           }
         });

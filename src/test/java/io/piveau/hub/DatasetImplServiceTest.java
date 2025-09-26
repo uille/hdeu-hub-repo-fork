@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Testing the datasets service")
+@DisplayName("DatasetImplServiceTest - Testing the datasets service")
 @ExtendWith(VertxExtension.class)
 class DatasetImplServiceTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(DatasetImplServiceTest.class);
@@ -261,6 +261,72 @@ class DatasetImplServiceTest {
                 })
                 .onFailure(testContext::failNow);
     }
+
+
+
+    @Test
+    @DisplayName("Put dataset with health data")
+    void testPutDatasetOriginHealthData(Vertx vertx, VertxTestContext testContext) {
+        String datasetId = "health-dataset";
+        datasetsService.putDatasetOriginHealthData(datasetId, exampleDataset, RDFMimeTypes.TURTLE, catalogueID, false, false)
+                .onSuccess(result -> testContext.verify(() -> {
+                    assertEquals("created", result.getString("status"));
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Post dataset creation")
+    void testPostDataset(Vertx vertx, VertxTestContext testContext) {
+        datasetsService.postDataset(exampleDataset, RDFMimeTypes.TURTLE, catalogueID, true)
+                .onSuccess(result -> testContext.verify(() -> {
+                    assertNotNull(result.getString("status"));
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Get record for dataset")
+    void testGetRecordForDataset(Vertx vertx, VertxTestContext testContext) {
+        String datasetId = "record-dataset";
+        datasetsService.putDatasetOrigin(datasetId, exampleDataset, RDFMimeTypes.TURTLE, catalogueID, false)
+                .compose(res -> datasetsService.getRecord(datasetId, RDFMimeTypes.TURTLE))
+                .onSuccess(content -> testContext.verify(() -> {
+                    assertNotNull(content);
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("putDataset - invalid RDF content should fail with 400")
+    void testPutDatasetInvalidContent(Vertx vertx, VertxTestContext testContext) {
+        String datasetId = "put-invalid-dataset";
+        String invalidContent = "invalid RDF content";
+
+        datasetsService.putDataset(datasetId, invalidContent, RDFMimeTypes.TURTLE)
+                .onSuccess(res -> testContext.failNow("Expected failure"))
+                .onFailure(err -> testContext.verify(() -> {
+                    assertTrue(err instanceof ServiceException);
+                    assertEquals(400, ((ServiceException) err).failureCode());
+                    testContext.completeNow();
+                }));
+    }
+
+    @Test
+    @DisplayName("ListDatasets - valueType unknown should fail")
+    void testListDatasetsUnknownFails(Vertx vertx, VertxTestContext testContext) {
+        datasetsService.listDatasets("application/json", "foobar", 10, 0, false, null, false)
+                .onComplete(testContext.failing(err -> testContext.verify(() -> {
+                    assertTrue(err instanceof ServiceException);
+                    assertEquals(400, ((ServiceException) err).failureCode());
+                    assertEquals("Unknown value type", err.getMessage());
+                    testContext.completeNow();
+                })));
+    }
+
 
     //TODO: create Dataset & check if distribution is renamed
     //TODO: add update dataset with a dataset that has an additional Dist (without dct:idenifier) & dist is correctly renamed

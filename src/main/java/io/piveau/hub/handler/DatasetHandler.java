@@ -29,11 +29,24 @@ import io.vertx.ext.web.validation.RequestParameter;
 import io.vertx.ext.web.validation.RequestParameters;
 import io.vertx.ext.web.validation.ValidationHandler;
 import io.vertx.serviceproxy.ServiceException;
+import java.io.StringReader;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import org.apache.jena.rdf.model.Model;
+import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.rdf.model.RDFNode;
+import org.apache.jena.rdf.model.Resource;
+import org.apache.jena.rdf.model.Statement;
+import org.apache.jena.rdf.model.StmtIterator;
+import org.apache.jena.riot.Lang;
+import org.apache.jena.riot.RDFParser;
+import org.apache.jena.riot.RiotException;
+import org.apache.jena.vocabulary.DCAT;
+import org.apache.jena.vocabulary.DCTerms;
+import org.apache.jena.vocabulary.RDF;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +70,7 @@ public class DatasetHandler {
   private static final String DATASET_ITB_VALIDATION_ERROR_0101 = "DATASET_ITB_VALIDATION_ERROR_0101";
   private static final String DATASET_ITB_VALIDATION_ERROR_0102 = "DATASET_ITB_VALIDATION_ERROR_0102";
   private static final String DATASET_ITB_UNEXPECTED_ERROR = "DATASET_ITB_UNEXPECTED_ERROR";
+  private static final String PUBLIC = "public";
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -274,8 +288,7 @@ public class DatasetHandler {
       String rdfContent = context.body().asString();
       // Validate the dataset based on dcat-ap and healthdcat-ap specifications
       // using the ITB validator API
-      JsonObject itbReport = validateDatasetInItb(
-          createDatasetValidationRequestBody(rdfContent, contentType));
+      JsonObject itbReport = validateDatasetInItb(rdfContent, contentType);
 
       if (itbReport.getString(DATASET_ITB_UNEXPECTED_ERROR) != null) {
         logger.error(DATASET_ITB_UNEXPECTED_ERROR + ": {}",
@@ -286,17 +299,17 @@ public class DatasetHandler {
         return true;
       }
 
-      boolean hasErrors = itbReport.getJsonObject("counters").getInteger("nrOfErrors", 0) > 0;
+      JsonObject counters = itbReport.getJsonObject("counters", new JsonObject());
+      boolean hasErrors = counters.getInteger("nrOfErrors", 0) > 0;
 
       if (Objects.nonNull(itbReport.getString(DATASET_ITB_VALIDATION_ERROR_0102))) {
         // ITB validation error, ERR_HD_0102 Unexpected characters
-        logger.error(
-            DATASET_ITB_VALIDATION_ERROR_0102
-                + " when uploading dataset for catalogue with id '{}': {}",
-            catalogueId,
-            itbReport.getString("message"));
-        JsonObject errorMessage = new JsonObject().put("error", DATASET_ITB_VALIDATION_ERROR_0102)
-            .put("message", itbReport.getString("message"));
+        String message = itbReport.getString(DATASET_ITB_VALIDATION_ERROR_0102);
+        logger.error("{} when uploading dataset for catalogue with id '{}': {}",
+            DATASET_ITB_VALIDATION_ERROR_0102, catalogueId, message);
+        JsonObject errorMessage = new JsonObject()
+            .put("error", DATASET_ITB_VALIDATION_ERROR_0102)
+            .put("message", message);
 
         HubRepo.failureResponse(context, new ServiceException(400, errorMessage.encodePrettily()));
         return true;
@@ -313,7 +326,6 @@ public class DatasetHandler {
         HubRepo.failureResponse(context, new ServiceException(400, errorMessage.encodePrettily()));
         return true;
       }
-
     } catch (ExecutionException | InterruptedException e) {
       logger.error(DATASET_ITB_UNEXPECTED_ERROR, e);
       JsonObject errorMessage = new JsonObject().put("error", DATASET_ITB_UNEXPECTED_ERROR)
@@ -507,8 +519,10 @@ public class DatasetHandler {
         .onFailure(cause -> HubRepo.failureResponse(context, cause));
   }
 
-  private JsonObject validateDatasetInItb(JsonObject requestBody)
+  private JsonObject validateDatasetInItb(String rdf, String contentType)
       throws ExecutionException, InterruptedException {
+    String validationType = getValidationType(rdf, contentType);
+    JsonObject requestBody = createDatasetValidationRequestBody(rdf, contentType, validationType);
     CompletableFuture<JsonObject> future = new CompletableFuture<>();
     WebClient itbValidatorWebClient = WebClient.create(Vertx.vertx());
     String itbValidatorApiEndpoint = System.getenv(Constants.ENV_PIVEAU_ITB_VALIDATOR_ENDPOINT);
@@ -597,21 +611,78 @@ public class DatasetHandler {
   /**
    * Creates the JSON body for the validation request.
    *
-   * @param contentSyntax The syntax of the RDF content, e.g., "text/turtle"
-   * @return The JSON body as a JsonObject
+   * @param rdfContent The RDF content to be validated.
+   * @param contentSyntax The content type of the RDF, e.g., "text/turtle".
+   * @param validationType The dataset schema to be used, ("public", "restricted", "non-public")
+   * @return The JSON body as a JsonObject.
    */
-  private JsonObject createDatasetValidationRequestBody(String rdfContent, String contentSyntax) {
-
+  private JsonObject createDatasetValidationRequestBody(
+      String rdfContent,
+      String contentSyntax,
+      String validationType) {
     String rdfContentBase64 = Base64.getEncoder().encodeToString(rdfContent.getBytes());
-
     return new JsonObject()
         .put("contentToValidate", rdfContentBase64)
         .put("embeddingMethod", "BASE64")
         .put("contentSyntax", contentSyntax)
-        .put("validationType", "healthdcatap")
+        .put("validationType", validationType)
         .put("reportSyntax", "application/json");
   }
+
+  /**
+   * Extracts the validation type from the RDF based on the dct:accessRights property.
+   *
+   * @param rdfContent  The RDF content as a string.
+   * @param contentType The content type of the RDF, e.g., "text/turtle".
+   * @return The validation type as a string ("public", "restricted", "non-public"). Defaults to
+   * "public".
+   */
+  private String getValidationType(String rdfContent, String contentType) {
+    Lang lang = switch (contentType) {
+      case "application/ld+json" -> Lang.JSONLD;
+      case "application/n-quads" -> Lang.NQUADS;
+      case "application/n-triples" -> Lang.NTRIPLES;
+      case "application/rdf+xml" -> Lang.RDFXML;
+      case "application/trig" -> Lang.TRIG;
+      case "text/turtle" -> Lang.TURTLE;
+      default -> null;
+    };
+    if (lang == null) {
+      return PUBLIC;
+    }
+
+    Model model = ModelFactory.createDefaultModel();
+    try {
+      RDFParser.create().source(new StringReader(rdfContent)).lang(lang).parse(model);
+    } catch (RiotException e) {
+      logger.warn("Error parsing RDF content", e);
+      // This exception means there are structural errors in the RDF, so we return public to proceed
+      // with the validation and let ITB handle it and return a more detailed error message
+      return PUBLIC;
+    }
+
+    // Look for dct:accessRights in a dataset
+    StmtIterator dsTypes = model.listStatements(null, RDF.type, DCAT.Dataset);
+    while (dsTypes.hasNext()) {
+      Resource dataset = dsTypes.nextStatement().getSubject();
+      Statement stmt = dataset.getProperty(DCTerms.accessRights);
+      if (stmt == null) {
+        continue;
+      }
+
+      RDFNode object = stmt.getObject();
+      String uri = object.isResource() ? object.asResource().getURI() : object.toString();
+
+      // Map valid values to their validation type equivalents
+      return switch (uri) {
+        case "http://publications.europa.eu/resource/authority/access-right/RESTRICTED" ->
+            "restricted";
+        case "http://publications.europa.eu/resource/authority/access-right/NON_PUBLIC" ->
+            "non-public";
+        default -> PUBLIC;
+      };
+    }
+
+    return PUBLIC;
+  }
 }
-
-
-

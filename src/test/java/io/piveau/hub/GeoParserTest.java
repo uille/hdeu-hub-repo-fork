@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@DisplayName("Testing geo parsing")
+@DisplayName("GeoParserTest - Testing geo parsing")
 class GeoParserTest {
 
     @Test

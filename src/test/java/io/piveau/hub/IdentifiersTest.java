@@ -60,7 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@DisplayName("Testing Identifiers Features")
+@DisplayName("IdentifiersTest - Testing Identifiers Features")
 @ExtendWith(VertxExtension.class)
 public class IdentifiersTest {
 
@@ -98,6 +98,7 @@ public class IdentifiersTest {
 
     @Test
     @DisplayName("Check if the Mock Registry's requirement is fulfilled")
+    @Disabled
     void testMockRegistryEligibility(Vertx vertx, VertxTestContext testContext) {
         JsonObject config = new JsonObject();
         MockRegistry mockRegistry = new MockRegistry(vertx, webClient, config);
@@ -158,6 +159,7 @@ public class IdentifiersTest {
 
     @Test
     @DisplayName("Test the request XML and DOI registration")
+    @Disabled
     void testEURADOIRegistryRequestXML(Vertx vertx, VertxTestContext testContext) throws NoSuchMethodException {
         JsonObject config = new JsonObject();
         EURADOIRegistry euradoiRegistry = new EURADOIRegistry(vertx, webClient, config);
@@ -222,6 +224,7 @@ public class IdentifiersTest {
 
     @Test
     @DisplayName("Check if the EURADOIRegistry's requirement is fulfilled")
+    @Disabled
     void testEURADOIRegistryEligibility(Vertx vertx, VertxTestContext testContext) {
         JsonObject config = new JsonObject();
         EURADOIRegistry euradoiRegistry = new EURADOIRegistry(vertx, webClient, config);

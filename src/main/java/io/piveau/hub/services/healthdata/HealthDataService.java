@@ -21,15 +21,8 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
-import java.io.StringReader;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import org.apache.jena.rdf.model.Model;
-import org.apache.jena.rdf.model.ModelFactory;
-import org.apache.jena.rdf.model.Resource;
-import org.apache.jena.rdf.model.StmtIterator;
-import org.apache.jena.vocabulary.SKOS;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,75 +32,9 @@ public class HealthDataService {
   private final WebClient client;
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
-  private final String healthCategoriesVocabularyBaseUrl;
 
   public HealthDataService(Vertx vertx) {
     this.client = WebClient.create(vertx);
-    // Fetch the base URL from the environment variable or use a default value
-    this.healthCategoriesVocabularyBaseUrl = Objects.requireNonNullElse(
-        System.getenv(Constants.ENV_HUB_REPO_HEALTH_CATEGORIES_VOCABULARY_BASE_URL), null);
-  }
-
-  /**
-   * This function returns the description (skos:prefLabel) for a given health category from the
-   * draft controlled vocabulary implementation
-   *
-   * @param healthCategory the healthdcat-ap health category
-   * @return the category description
-   */
-  public CompletableFuture<String> fetchHealthCategoryDescriptionFromVocabulary(
-      String healthCategory) {
-    CompletableFuture<String> future = new CompletableFuture<>();
-
-    if (Objects.isNull(this.healthCategoriesVocabularyBaseUrl)) {
-      logger.error("Health Category retrieval error: Environment variable for base url is not set");
-      future.complete("");
-    }
-
-    String endpoint = this.healthCategoriesVocabularyBaseUrl + healthCategory;
-
-    // Set a default timeout of 10 seconds if the environment variable is not set
-    int timeoutInMillis =
-        Optional.ofNullable(System.getenv(Constants.ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT))
-            .map(s -> {
-              try {
-                return Integer.parseInt(s);
-              } catch (NumberFormatException e) {
-                return 10000;
-              }
-            })
-            .orElse(10000);
-
-    client.getAbs(endpoint)
-        .timeout(
-            timeoutInMillis) // Ensure request times out if health categories vocabulary service is unresponsive
-        .send(ar -> {
-          if (ar.succeeded()) {
-            HttpResponse<io.vertx.core.buffer.Buffer> response = ar.result();
-            String contentType = response.getHeader("Content-Type");
-            if (contentType == null || !isRdfContentType(contentType)) {
-              logger.error("Health Category retrieval error: unexpected response content type {}",
-                  contentType);
-              future.complete(""); // Fallback value
-            }
-            if (response.statusCode() == 200) {
-              String healthCategoryRdf = response.bodyAsString();
-              String result = extractEnglishPrefLabel(healthCategoryRdf, endpoint);
-              future.complete(result);
-            } else {
-              // Handle non-200 responses gracefully
-              logger.error("Health Category retrieval error: response {} {}",
-                  response.statusCode(), response.statusMessage());
-              future.complete(""); // Fallback value
-            }
-          } else {
-            logger.error("Health Category retrieval error, unsuccessful request {}",
-                ar.cause().getMessage());
-            future.complete(""); // Fallback value
-          }
-        });
-
-    return future;
   }
 
   /**
@@ -279,45 +206,5 @@ public class HealthDataService {
     }
 
     return jsonObjectBuilder.toString();
-  }
-
-  /**
-   * @param rdfXml      the rdf xml string
-   * @param resourceUri the resource in the rdf for which we want to find the english
-   *                    skos:prefLabel
-   * @return the english skos:prefLabel
-   */
-  private static String extractEnglishPrefLabel(String rdfXml, String resourceUri) {
-    // Parse RDF from XML string using Apache Jena
-    Model model = ModelFactory.createDefaultModel();
-    model.read(new StringReader(rdfXml), null, "RDF/XML");
-
-    Resource resource = model.getResource(resourceUri);
-    // Iterate over all skos:prefLabel and find the one with xml:lang="en"
-    StmtIterator labels = resource.listProperties(SKOS.prefLabel);
-    while (labels.hasNext()) {
-      var labelStatement = labels.nextStatement();
-      var label = labelStatement.getObject();
-      var lang = label.asLiteral().getLanguage();
-      // Check if the language is English
-      if ("en".equals(lang)) {
-        return label.asLiteral().getString(); // Return the label if found
-      }
-    }
-    return null;
-  }
-
-  private boolean isRdfContentType(String contentType) {
-    // Normalize content type to lowercase and remove extra spaces
-    String normalizedContentType = contentType.toLowerCase().trim();
-
-    // Allow known RDF content types
-    return normalizedContentType.contains("rdf+xml") ||
-        normalizedContentType.contains("turtle") ||
-        normalizedContentType.contains("ld+json") ||
-        normalizedContentType.contains("n-triples") ||
-        normalizedContentType.contains("n-quads") ||
-        normalizedContentType.contains("n3") ||
-        normalizedContentType.contains("xml");  // Allow 'text/xml' as RDF/XML workaround
   }
 }

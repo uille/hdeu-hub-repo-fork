@@ -250,7 +250,9 @@ public class MetricsServiceImpl implements MetricsService {
                                 promise.fail(new ServiceException(500, e.getMessage()));
                             }
                         })
-                        .onFailure(cause -> promise.fail(new ServiceException(500, cause.getMessage())));
+                        .onFailure(cause -> {
+                            promise.fail(new ServiceException(500, cause.getMessage()));
+                        });
             } catch (Exception e) {
                 promise.fail(new ServiceException(500, "Internal Server Error"));
             }

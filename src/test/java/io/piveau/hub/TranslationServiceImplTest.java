@@ -20,10 +20,13 @@ import io.piveau.hub.services.DatasetHelperMessageCodec;
 import io.piveau.hub.services.index.IndexService;
 import io.piveau.hub.services.translation.TranslationService;
 import io.piveau.hub.services.translation.TranslationServiceVerticle;
+import io.piveau.hub.util.IndexMappingLoader;
+import io.piveau.profile.PiveauProfile;
 import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.test.MockTripleStore;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
@@ -36,9 +39,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@DisplayName("Testing the Translation Service verticle")
+@DisplayName("TranslationServiceImplTest - Testing the Translation Service verticle")
 @ExtendWith(VertxExtension.class)
 class TranslationServiceImplTest {
 
@@ -80,6 +84,7 @@ class TranslationServiceImplTest {
                         .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
                         .put(Constants.ENV_PIVEAU_HUB_VALIDATOR, new JsonObject().put("url", "localhost").put("enabled", false))
                         .put(Constants.ENV_PIVEAU_HUB_API_KEY, "apikey")
+                        .put(Constants.ENV_PIVEAU_HUB_SEARCH_SERVICE, new JsonObject().put("enabled", true))
                         .put(Constants.ENV_PIVEAU_TRANSLATION_SERVICE, new JsonObject()
                                 .put("enable", true)
                                 .put("accepted_languages", new JsonArray(Arrays.asList("en", "bg", "hr", "cs", "da", "nl", "et", "fi", "fr", "el",
@@ -185,7 +190,6 @@ class TranslationServiceImplTest {
     void testNoOldHelper(Vertx vertx, VertxTestContext testContext) {
 
         //change title so that new
-
         Checkpoint checkpoint = testContext.checkpoint(2);
         Router router = Router.router(vertx);
         router.route("/callback").handler(this::error500);
@@ -208,4 +212,82 @@ class TranslationServiceImplTest {
             }
         });
     }
+
+    @Test
+    @DisplayName("receive translation callback successfully")
+    void testReceiveTranslation(Vertx vertx, VertxTestContext testContext) {
+
+        Checkpoint checkpoint = testContext.checkpoint(1);
+        Router router = Router.router(vertx);
+        router.route("/callback").handler(this::error500);
+
+        vertx.createHttpServer().requestHandler(router).listen(9099, handler -> {
+            if (handler.failed()) {
+                testContext.failNow(handler.cause());
+            } else {
+                JsonObject translation = new JsonObject()
+                        .put("id", "https://piveau.io/id/dataset/test")
+                        .put("dict", new JsonObject())
+                        .put("data", new JsonObject()
+                                .put("catalogueId", "test-catalogue")
+                                .put("defaultLanguage", "de")
+                        );
+
+                translationService.receiveTranslation(translation, ar -> {
+                    if (ar.succeeded()) {
+                        JsonObject result = ar.result();
+                        assertNotNull(result);
+                        assertEquals("success", result.getString("status"));
+                        checkpoint.flag();
+                    } else {
+                        testContext.failNow(ar.cause());
+                    }
+                });
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("receiveTranslation with indexing initialized")
+    void testReceiveTranslationWithIndexing(Vertx vertx, VertxTestContext testContext) {
+        JsonObject config = new JsonObject(); // populate as needed
+        PiveauProfile profile = null; // or a mock/stub if needed
+
+        IndexMappingLoader mappingLoader = new IndexMappingLoader(vertx, config, profile);
+
+        mappingLoader.load().onSuccess(v -> {
+            JsonObject dict = new JsonObject()
+                    .put("https://piveau.io/set/data/test-dataset", new JsonObject()
+                            .put("http://purl.org/dc/terms/title", new JsonObject()
+                                    .put("sourceLanguage", "en")
+                                    .put("translations", new JsonObject()
+                                            .put("fr", -90002)
+                                            .put("de", "Beispieldatensatz")
+                                    )
+                            )
+                    );
+
+            JsonObject translation = new JsonObject()
+                    .put("id", "https://piveau.io/id/dataset/test")
+                    .put("dict", dict)
+                    .put("data", new JsonObject()
+                            .put("catalogueId", "some-cat")
+                            .put("defaultLanguage", "en"));
+
+
+
+            translationService.receiveTranslation(translation, ar -> {
+                if (ar.succeeded()) {
+                    assertEquals("success", ar.result().getString("status"));
+                    testContext.completeNow();
+                } else {
+                    testContext.failNow(ar.cause());
+                }
+            });
+
+        }).onFailure(testContext::failNow);
+    }
+
+
+
 }

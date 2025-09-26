@@ -45,6 +45,9 @@ public class CatalogueHelper {
         renameReferences();
         catalogue = model.getResource(uriRef());
 
+        // Enforce exactly one dct:language and one dct:spatial
+        validateSingleLanguageAndSpatial(catalogue);
+
         modified();
         catalogue.addProperty(DCTerms.issued, ZonedDateTime
                 .now(ZoneOffset.UTC)
@@ -86,5 +89,22 @@ public class CatalogueHelper {
     private void renameReferences() {
         model.listSubjectsWithProperty(RDF.type, DCAT.Catalog).forEachRemaining(ds ->
                 ResourceUtils.renameResource(ds, uriRef()));
+    }
+
+    /**
+     * Validates that the catalog has exactly one dct:language and one dct:spatial.
+     * Temp solution for Release 5
+     * @param catalog the catalog resource to validate
+     */
+    private void validateSingleLanguageAndSpatial(Resource catalog) {
+        long languageCount = catalog.listProperties(DCTerms.language).toList().size();
+        long spatialCount = catalog.listProperties(DCTerms.spatial).toList().size();
+
+        if (languageCount != 1 || spatialCount != 1) {
+            throw new IllegalArgumentException(String.format(
+                "Catalog must have exactly one dct:language and one dct:spatial. Found: language=%d, spatial=%d",
+                languageCount, spatialCount
+            ));
+        }
     }
 }

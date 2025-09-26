@@ -215,4 +215,143 @@ class CatalogueImplServiceTest {
                 .onFailure(testContext::failNow);
     }
 
+    @Test
+    @DisplayName("Put catalogue with invalid RDF format")
+    void testPutCatalogueWithInvalidFormat(Vertx vertx, VertxTestContext testContext) {
+        String invalidRDF = "invalid content that cannot be parsed as RDF";
+
+        cataloguesService.putCatalogue("invalid-catalogue", invalidRDF, RDFMimeTypes.TURTLE)
+                .onSuccess(res -> testContext.failNow("Expected failure but got success"))
+                .onFailure(err -> testContext.verify(() -> {
+                    assertTrue(err instanceof ServiceException);
+                    assertEquals(400, ((ServiceException) err).failureCode());
+                    testContext.completeNow();
+                }));
+    }
+
+    @Test
+    @DisplayName("List catalogues with valueType = uriRefs")
+    void testListCataloguesUriRefs(Vertx vertx, VertxTestContext testContext) {
+        cataloguesService.putCatalogue("list-uriRef-catalogue", exampleCatalogue, RDFMimeTypes.TURTLE)
+                .compose(v -> cataloguesService.listCatalogues("application/json", "uriRefs", 0, 10))
+                .onSuccess(content -> testContext.verify(() -> {
+                    JsonArray list = new JsonArray(content);
+                    assertFalse(list.isEmpty());
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("List catalogues with valueType = originalIds")
+    void testListCataloguesOriginalIds(Vertx vertx, VertxTestContext testContext) {
+        cataloguesService.putCatalogue("list-originalId-catalogue", exampleCatalogue, RDFMimeTypes.TURTLE)
+                .compose(v -> cataloguesService.listCatalogues("application/json", "originalIds", 0, 10))
+                .onSuccess(content -> testContext.verify(() -> {
+                    JsonArray list = new JsonArray(content);
+                    assertFalse(list.isEmpty());
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("List catalogues with offset greater than size")
+    void testListCataloguesWithHighOffset(Vertx vertx, VertxTestContext testContext) {
+        cataloguesService.putCatalogue("offset-test-catalogue", exampleCatalogue, RDFMimeTypes.TURTLE)
+                .compose(v -> cataloguesService.listCatalogues("application/json", "uriRefs", 100, 10))
+                .onSuccess(content -> testContext.verify(() -> {
+                    JsonArray list = new JsonArray(content);
+                    assertEquals(0, list.size());
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Put hidden catalogue (skip indexing)")
+    void testPutHiddenCatalogue(Vertx vertx, VertxTestContext testContext) {
+        String hiddenCatalogue = """
+        @prefix edp: <http://data.europa.eu/piveau/edp#> .
+        @prefix dcat: <http://www.w3.org/ns/dcat#> .
+        @prefix ex: <http://example.org/catalog/> .
+
+        ex:hidden-catalogue a dcat:Catalog ;
+            edp:visibility edp:hidden .
+        """;
+
+        cataloguesService.putCatalogue("hidden-catalogue", hiddenCatalogue, RDFMimeTypes.TURTLE)
+                .onSuccess(result -> testContext.verify(() -> {
+                    assertEquals("created", result);
+                    // No indexing is triggered, we rely on coverage of onFailure/onSuccess handling
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Update an existing catalogue")
+    void testUpdateExistingCatalogue(Vertx vertx, VertxTestContext testContext) {
+        String catalogueId = "update-test-catalogue";
+        cataloguesService.putCatalogue(catalogueId, exampleCatalogue, RDFMimeTypes.TURTLE)
+                .compose(v -> cataloguesService.putCatalogue(catalogueId, exampleCatalogue, RDFMimeTypes.TURTLE))
+                .onSuccess(result -> testContext.verify(() -> {
+                    assertEquals("updated", result);
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Delete a catalogue with datasets")
+    void testDeleteCatalogueWithDatasets(Vertx vertx, VertxTestContext testContext) {
+        String datasetId = "catalogue-with-datasets";
+        String withDatasets = """
+        @prefix dcat: <http://www.w3.org/ns/dcat#> .
+        @prefix ex: <http://example.org/> .
+
+        ex:%1$s a dcat:Catalog ;
+            dcat:dataset ex:ds1 ;
+            dcat:record ex:rec1 .
+
+        ex:ds1 a dcat:Dataset .
+        ex:rec1 a dcat:Resource .
+        """.formatted(datasetId);
+
+        cataloguesService.putCatalogue(datasetId, withDatasets, RDFMimeTypes.TURTLE)
+                .compose(v -> cataloguesService.deleteCatalogue(datasetId))
+                .onSuccess(v -> testContext.completeNow())
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Indexing fails but catalogue is still created")
+    void testIndexingFailure(Vertx vertx, VertxTestContext testContext) {
+        vertx.eventBus().consumer("io.piveau.hub.index.queue", msg -> {
+            msg.fail(500, "Simulated failure");
+        });
+
+        String catalogueId = "index-fail-catalogue";
+        cataloguesService.putCatalogue(catalogueId, exampleCatalogue, RDFMimeTypes.TURTLE)
+                .onSuccess(res -> testContext.verify(() -> {
+                    assertEquals("created", res);
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("List catalogues with offset + limit > size")
+    void testListOffsetPlusLimit(Vertx vertx, VertxTestContext testContext) {
+        cataloguesService.putCatalogue("partial-list-cat", exampleCatalogue, RDFMimeTypes.TURTLE)
+                .compose(v -> cataloguesService.listCatalogues("application/json", "uriRefs", 0, 5))
+                .onSuccess(content -> testContext.verify(() -> {
+                    JsonArray list = new JsonArray(content);
+                    assertEquals(1, list.size());
+                    testContext.completeNow();
+                }))
+                .onFailure(testContext::failNow);
+    }
+
+
 }

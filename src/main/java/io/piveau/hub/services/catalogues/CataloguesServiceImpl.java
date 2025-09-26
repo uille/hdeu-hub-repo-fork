@@ -118,6 +118,9 @@ public class CataloguesServiceImpl implements CataloguesService {
         } catch (RiotException e) {
             logger.error("Error parsing catalogue", e);
             return Future.failedFuture(new ServiceException(400, "Could not decode body with Content-Type " + contentType + ": " + e.getMessage()));
+        } catch (IllegalArgumentException e) {
+          logger.error("Validation error in catalogue RDF", e);
+          return Future.failedFuture(new ServiceException(400, "Validation error: " + e.getMessage()));
         }
 
         Model datasetsList = ModelFactory.createDefaultModel();

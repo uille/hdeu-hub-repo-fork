@@ -91,65 +91,40 @@ spec:
           # This volumeMounts section mounts the secret-volume to the container under the /usr/verticles/conf directory
           volumeMounts:
             - name: secret-volume
-              mountPath: /usr/verticles/conf          
+              mountPath: /usr/verticles/conf
+            - name: config-files
+              mountPath: /usr/verticles/profiles/healthdcatap
       # This volumes section defines the config.json file as a Kubernetes secret
       volumes:
         - name: secret-volume
           secret:
             secretName: {{ include "piveau-hub-repo.name" . }}-secret-json
+        - name: config-files
+          configMap:
+            name: {{ include "piveau-hub-repo.name" . }}-configmap-healthdatacatap
+            items:
+              - key: piveau.json
+                path: piveau.json
+              - key: healthdcat-ap.hub.shapes.ttl
+                path: healthdcat-ap.hub.shapes.ttl
         # Conditional block - If the deployment is to take place in an AWS environment
         {{- else }}
           # This env section allows us to set environment variables to the value of a key from a Kubernetes secret
           env:
-            - name: VIRTUOSO_CONFIG_URL
+          {{- $rootChart := . }}
+          {{- range $envName, $secretKey := .Values.aws.envSecretsMap }}
+            - name: {{ $envName }}
               valueFrom:
                 secretKeyRef:
-                  key: virtuoso_config_url
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: VIRTUOSO_CONFIG_USER
-              valueFrom:
-                secretKeyRef:
-                  key: username
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: VIRTUOSO_CONFIG_PASS
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: SHADOW_VIRTUOSO_CONFIG_URL
-              valueFrom:
-                secretKeyRef:
-                  key: shadow_virtuoso_config_url
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: SHADOW_VIRTUOSO_CONFIG_USER
-              valueFrom:
-                secretKeyRef:
-                  key: shadow_username
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: SHADOW_VIRTUOSO_CONFIG_PASS
-              valueFrom:
-                secretKeyRef:
-                  key: shadow_password
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: HUB_REPO_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: hub_repo_api_key
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: HUB_SEARCH_SERVICE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: hub_search_service_api_key
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
-            - name: HUB_STORE_DATA_UPLOAD_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: hub_store_data_upload_api_key
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+                  key: {{ $secretKey }}
+                  name: {{ include "piveau-hub-repo.name" $rootChart }}-secrets
+          {{- end }}
           # This volumeMounts section mounts the secret-volume and the secrets to the container under the /usr/verticles/conf and /etc/{{ include "piveau-hub-repo.name" . }}-secrets
           volumeMounts:
             - name: secret-volume
               mountPath: /usr/verticles/conf
+            - name: config-files
+              mountPath: /usr/verticles/profiles/healthdcatap
             - name: {{ include "piveau-hub-repo.name" . }}-secrets
               mountPath: /etc/{{ include "piveau-hub-repo.name" . }}-secrets
               readOnly: true
@@ -158,6 +133,14 @@ spec:
         - name: secret-volume
           secret:
             secretName: {{ include "piveau-hub-repo.name" . }}-secret-json
+        - name: config-files
+          configMap:
+            name: {{ include "piveau-hub-repo.name" . }}-configmap-healthdatacatap
+            items:
+              - key: piveau.json
+                path: piveau.json
+              - key: healthdcat-ap.hub.shapes.ttl
+                path: healthdcat-ap.hub.shapes.ttl
         # We store all the secrets defined in the secretProviderClass with the name piveau-hub-repo-spc, that in its turn, loads the secrets from the AWS Secret Manager
         - name: {{ include "piveau-hub-repo.name" . }}-secrets
           csi:

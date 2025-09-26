@@ -15,7 +15,13 @@
  */
 package io.piveau.hub.services.translation;
 
-import io.piveau.dcatap.*;
+import static io.piveau.hub.services.translation.TranslationServiceUtils.callbackParameters;
+import static io.piveau.hub.services.translation.TranslationServiceUtils.translationLanguages;
+
+import io.piveau.dcatap.DCATAPUriRef;
+import io.piveau.dcatap.DCATAPUriSchema;
+import io.piveau.dcatap.DatasetManager;
+import io.piveau.dcatap.TripleStore;
 import io.piveau.hub.Constants;
 import io.piveau.hub.dataobjects.DatasetHelper;
 import io.piveau.hub.indexing.Indexing;
@@ -24,7 +30,10 @@ import io.piveau.json.ConfigHelper;
 import io.piveau.log.PiveauLogger;
 import io.piveau.utils.PiveauContext;
 import io.piveau.vocabularies.vocabulary.EDP;
-import io.vertx.core.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
@@ -33,21 +42,17 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.predicate.ResponsePredicate;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import org.apache.jena.datatypes.xsd.XSDDatatype;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.vocabulary.DCTerms;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
-import java.util.Map;
-
-import static io.piveau.hub.services.translation.TranslationServiceUtils.callbackParameters;
-import static io.piveau.hub.services.translation.TranslationServiceUtils.translationLanguages;
 
 public class TranslationServiceImpl implements TranslationService {
 
@@ -76,9 +81,10 @@ public class TranslationServiceImpl implements TranslationService {
                 .map(Object::toString).toList();
 
         translationServiceRequest = client.postAbs(translationConfig.getString("translation_service_url", "https://example.com/translation-service/"))
-                .putHeader(HttpHeaders.CONTENT_TYPE.toString(), "application/json")
-                .expect(ResponsePredicate.SC_SUCCESS)
-                .timeout(10000);
+            .putHeader(HttpHeaders.CONTENT_TYPE.toString(), "application/json")
+            .putHeader("X-API-Key", translationConfig.getString("api_key", ""))
+            .expect(ResponsePredicate.SC_SUCCESS)
+            .timeout(10000);
 
         final String apiKey = config.getJsonObject(Constants.ENV_PIVEAU_HUB_API_KEYS, new JsonObject()).stream()
                 .filter(entry -> entry.getValue() instanceof JsonArray)
@@ -116,23 +122,24 @@ public class TranslationServiceImpl implements TranslationService {
      */
     @Override
     public TranslationService initializeTranslationProcess(DatasetHelper helper, DatasetHelper oldHelper, Boolean force, Handler<AsyncResult<DatasetHelper>> handler) {
+        PiveauLogger logger = moduleContext.extend(helper.piveauId()).log();
         try {
-            PiveauLogger logger = moduleContext.extend(helper.piveauId()).log();
-
-            final JsonObject translationRequest = TranslationServiceUtils.buildTranslationRequest(helper, oldHelper, force);
+            final JsonObject translationRequest = TranslationServiceUtils.buildTranslationRequest(helper, oldHelper);
             if (!translationRequest.isEmpty()) {
-                initTranslationProcess(helper.recordResource(), helper.getCatalogueInfo().getString("langCode"));
+                initTranslationProcess(
+                    helper.recordResource(),
+                    helper.getCatalogueInfo().getString("langCode", "en")
+                );
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Translation request: {}", translationRequest.encodePrettily());
+                }
                 translationServiceRequest.sendJsonObject(translationRequest)
-                        .onSuccess(response -> {
-                            logger.info("Translation initialized.");
-                            if (logger.isDebugEnabled()) {
-                                logger.debug("Translation request: {}", translationRequest.encodePrettily());
-                            }
-                        })
+                        .onSuccess(response -> logger.info("Translation initialized."))
                         .onFailure(cause -> logger.error("Translation initialization failed.", cause));
             }
             handler.handle(Future.succeededFuture(helper));
         } catch (Exception e) {
+            logger.error("Translation initialization failed.", e);
             handler.handle(Future.failedFuture(e));
         }
         return this;

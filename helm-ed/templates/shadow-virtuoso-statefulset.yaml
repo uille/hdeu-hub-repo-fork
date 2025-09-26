@@ -64,8 +64,8 @@ spec:
           {{- end }}
           # This volumeMounts section mounts the shadow-virtuoso-data volume to the container under the /database directory or mounts the secret-volume to the container under the /etc/piveau-hub-repo-secrets directory
           volumeMounts:
-            - mountPath: /database
-              name: shadow-virtuoso-data
+            - mountPath: /data
+              name: shadow-virtuoso
           # Conditional block - If the deployment is to take place in an AWS environment
           {{- if .Values.aws.enabled }}
             - name: {{ include "piveau-hub-repo.name" . }}-secrets
@@ -74,9 +74,6 @@ spec:
           {{- end }}
       # This volumes section defines the shadow-virtuoso-data volume as a persistent volume claim
       volumes:
-        - name: shadow-virtuoso-data
-          persistentVolumeClaim:
-            claimName: {{ include "piveau-hub-repo.shadowVirtuosoName" . }}
       {{- if .Values.aws.enabled }}
       # We store the secrets defined in the secretProviderClass with the name piveau-hub-repo-spc, that in its turn, loads the secrets from the AWS Secret Manager
         - name: {{ include "piveau-hub-repo.name" . }}-secrets
@@ -89,7 +86,7 @@ spec:
   # This volumes section defines the shadow-virtuoso-data volume as a persistent volume claim
   volumeClaimTemplates:
     - metadata:
-        name: shadow-virtuoso-data
+        name: shadow-virtuoso
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

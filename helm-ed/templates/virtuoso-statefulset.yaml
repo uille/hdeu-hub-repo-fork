@@ -64,8 +64,8 @@ spec:
           {{- end }}
           # This volumeMounts section mounts the virtuoso-data volume to the container under the /database directory or mounts the secret-volume to the container under the /etc/piveau-hub-repo-secrets directory
           volumeMounts:
-            - mountPath: /database
-              name: virtuoso-data
+            - mountPath: /data
+              name: virtuoso
           # Conditional block - If the deployment is to take place in an AWS environment
           {{- if .Values.aws.enabled }}
             - name: {{ include "piveau-hub-repo.name" . }}-secrets
@@ -85,7 +85,7 @@ spec:
   # This volumes section defines the virtuoso-data volume as a persistent volume claim
   volumeClaimTemplates:
     - metadata:
-        name: virtuoso-data
+        name: virtuoso
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

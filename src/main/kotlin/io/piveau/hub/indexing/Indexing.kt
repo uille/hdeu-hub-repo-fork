@@ -22,10 +22,11 @@ import io.piveau.dcatap.visitors.GeoSpatialVisitor
 import io.piveau.hub.services.healthdata.HealthDataService
 import io.piveau.hub.util.rdf.DPV
 import io.piveau.hub.util.rdf.HEALTHDCATAP
-import io.piveau.hub.util.rdf.R5R
-
 import io.piveau.json.*
+import io.piveau.profile.indexingResource
 import io.piveau.rdf.*
+import io.piveau.utils.normalizeDateTime
+import io.piveau.vocabularies.*
 import io.piveau.vocabularies.vocabulary.*
 import io.vertx.core.Future
 import io.vertx.core.Vertx
@@ -38,16 +39,13 @@ import org.apache.jena.rdf.model.Literal
 import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.RDFNode
 import org.apache.jena.rdf.model.Resource
+import org.apache.jena.rdf.model.ResourceFactory
 import org.apache.jena.sparql.vocabulary.FOAF
 import org.apache.jena.vocabulary.*
 import org.json.JSONObject
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
-import io.piveau.profile.indexingResource
-import io.piveau.utils.normalizeDateTime
-import io.piveau.vocabularies.*
-import java.util.UUID
 
 
 val log: Logger = LoggerFactory.getLogger("io.piveau.hub.Indexing")
@@ -122,48 +120,7 @@ fun indexHealthDcatAp(
                 if (predicate.nameSpace == HEALTHDCATAP.getURI()) {  // Check the namespace of the predicate
                     try {
                         when (predicate) {
-                            HEALTHDCATAP.maxTypicalAge -> {
-                                putIfNotNull("max_typical_age", indexingInteger(obj))
-                            }
-
-                            HEALTHDCATAP.minTypicalAge -> {
-                                putIfNotNull("min_typical_age", indexingInteger(obj))
-                            }
-
-                            HEALTHDCATAP.numberOfUniqueIndividuals -> {
-                                putIfNotNull("number_of_unique_individuals", indexingInteger(obj))
-                            }
-
-                            HEALTHDCATAP.numberOfRecords -> {
-                                putIfNotNull("number_of_records", indexingInteger(obj))
-                            }
-
-                            HEALTHDCATAP.publisherNote -> indexingSimpleMultiLang(obj).apply {
-                                withJsonObject("publisher_note").putIfNotBlank(first, second)
-                            }
-
-                            HEALTHDCATAP.retentionPeriod -> if (obj.isResource) withJsonArray("retention_period")
-                                .addIfNotEmpty(indexingTemporal(obj.asResource()))
-
-                            HEALTHDCATAP.healthCategory -> withJsonArray("health_category")
-                                .addIfNotEmpty(indexingHealthCategoryHealthData(obj, "/"))
-
-                            HEALTHDCATAP.publisherType -> withJsonArray("publisher_type")
-                                .addIfNotBlank(obj.visitWith(StandardVisitor) as String?)
-
-                            // Health Data Access Body
-                            HEALTHDCATAP.hdab -> putIfNotEmpty("hdab", indexingAgent(obj))
-
-                            // Analytics distributions
-                            HEALTHDCATAP.analytics -> withJsonArray("distributions_analytics").addIfNotEmpty(
-                                indexingDistributionHealthData(obj, "en")
-                            )
-
-                            HEALTHDCATAP.populationCoverage -> indexingSimpleMultiLang(obj).apply {
-                                withJsonObject("population_coverage").putIfNotBlank(first, second)
-                            }
-
-                            HEALTHDCATAP.hasCodeValues -> withJsonArray("code_values")
+                            HEALTHDCATAP.hasCodeValues -> withJsonArray("has_code_values")
                                 .addIfNotEmpty(indexingCodeValuesHealthData(obj))
 
 
@@ -175,7 +132,7 @@ fun indexHealthDcatAp(
                                 .addIfNotEmpty(indexingWikidataLabeledResource(obj))
 
                             else -> {
-                                log.warn("Unknown predicate for HEALTHDCATAP namespace: $predicate")
+                                log.debug("Unknown predicate for HEALTHDCATAP namespace: $predicate")
                             }
                         }
                     } catch (e: Exception) {
@@ -186,13 +143,10 @@ fun indexHealthDcatAp(
                 if (predicate.nameSpace == DPV.getURI()) {
                     try {
                         when (predicate) {
-
-                            DPV.hasPersonalData -> withJsonArray("has_personal_data")
-                                .addIfNotEmpty(indexingCustomLabeledResource(obj, "#"))
-
-                            DPV.hasPurpose -> indexingHasPurposeHealthData(obj)?.apply {
+                            DPV.hasPurpose -> indexingHasPurposeHealthData(obj).forEach { (first, second) ->
                                 withJsonObject("has_purpose").putIfNotBlank(first, second)
                             }
+
 
                             DPV.hasLegalBasis -> putIfNotNull(
                                 "has_legal_basis",
@@ -204,27 +158,15 @@ fun indexHealthDcatAp(
                     }
                 }
 
-                if (predicate.nameSpace == ADMS.NS) {  // Check the namespace of the predicate
-                    try {
-                        when (predicate) {
-                            // Sample distributions
-                            ADMS.sample -> withJsonArray("distributions_sample").addIfNotEmpty(
-                                indexingDistributionHealthData(obj,"en"))
-                        }
-                    } catch (e: Exception) {
-                        log.error("Error when handling the predicate: $predicate", e)
-                    }
-                }
-
                 if (predicate.nameSpace == DCTerms.NS) {  // Check the namespace of the predicate
                     try {
                         when (predicate) {
-                            DCTerms.alternative -> indexingSimpleMultiLang(obj).apply {
-                                withJsonObject("alternative").putIfNotBlank(first, second)
-                            }
-
                             DCTerms.conformsTo -> withJsonArray("conforms_to")
                                 .addIfNotEmpty(indexingConformsToHealthData(obj))
+
+                            DCTerms.provenance -> indexingProvenanceHealthData(obj).forEach { (first, second) ->
+                                withJsonObject("provenance").putIfNotBlank(first, second)
+                            }
                         }
                     } catch (e: Exception) {
                         log.error("Error when handling the predicate: $predicate", e)
@@ -241,6 +183,7 @@ fun indexHealthDcatAp(
                         log.error("Error when handling the predicate: $predicate", e)
                     }
                 }
+
                 if (predicate.nameSpace == DCAT.NS) {  // Check the namespace of the predicate
                     try {
                         when (predicate) {
@@ -252,6 +195,42 @@ fun indexHealthDcatAp(
                     }
                 }
 
+                if (predicate.nameSpace == ADMS.NS) {
+                    try {
+                        when (predicate) {
+                            ADMS.sample -> {
+                                // We’ve found an adms:sample triple → the object is a dcat:Distribution
+                                val distRes = obj.asResource()
+                                // Get the distribution piveau id (last part of the uri)
+                                // (we need it in order to match with the corresponding distributions_sample json object)
+                                val distId = distRes.uri.substringAfterLast('/')
+                                // Pull out all the CSVW-based column info for that distribution
+                                val vars = extractVariablesFromAdmsSampleDistribution(distRes)
+
+                                // Now we need to find the matching JSON object in our "sample_distributions" array
+                                // by matching the "id" field with the distUri id part.
+                                this.getJsonArray("distributions_sample")?.let { sdArray ->
+                                    // Iterate by index so we can break out once we’ve found the right one
+                                    for (i in 0 until sdArray.size()) {
+                                        // Fetch the i-th element as a JsonObject
+                                        val sd = sdArray.getJsonObject(i)
+                                        // Compare its "id" field against our distribution URI id
+                                        if (sd.getString("id") == distId) {
+                                            //If we actually found any column info, attach it
+                                            if (vars.size() > 0) {
+                                               sd.put("variables", vars)
+                                            }
+                                            // We’ve enriched the correct JSON entry—no need to keep looping
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        log.error("Error when handling ADMS predicate: $predicate", e)
+                    }
+                }
 
             }
         } catch (e: Exception) {
@@ -260,140 +239,36 @@ fun indexHealthDcatAp(
     }
 }
 
+fun indexingHasPurposeHealthData(node: RDFNode): List<Pair<String, String?>> {
+    val resultPairs = mutableListOf<Pair<String, String?>>()
 
-// HEALTH DATA
-//----------------------------------------------------------------------------------------------------------------------
-fun indexingDistributionHealthData(node: RDFNode, defaultLang: String): JsonObject = when (node) {
-    is Resource -> JsonObject().apply {
-        // TODO check how they get the id in order to handle it properly if needed (for now we generate a UUID)
-        //putIfNotBlank("id", DCATAPUriSchema.parseUriRef(node.asResource().uri).id)
-        val myUuidAsString = UUID.randomUUID().toString()
-        putIfNotBlank("id", myUuidAsString)
-        node.listProperties().forEachRemaining { (_, predicate, obj) ->
-            when (predicate) {
-                // Mandatory property
-                DCAT.accessURL -> withJsonArray("access_url").addIfNotBlank(
-                    obj.visitWith(
-                        StandardVisitor
-                    ) as String?
-                )
+    val resource = node.asResource()
+    resource.listProperties().forEachRemaining { stmt ->
+        val predicate = stmt.predicate
+        val obj = stmt.`object`
 
-                // Recommended properties
-                DCATAP.availability -> putIfNotNull("availability", indexingLabeledResource(obj))
-                DCTerms.description -> indexingSimpleMultiLang(obj).apply {
-                    withJsonObject("description").putIfNotBlank(first, second)
-                }
-
-
-                DCTerms.format -> putIfNotEmpty(
-                    "format",
-                    obj.visitWith(FormatVisitor) as JsonObject
-                )
-
-                DCTerms.license -> putIfNotEmpty(
-                    "license",
-                    obj.visitWith(LicenseVisitor) as JsonObject
-                )
-
-
-                // Optional properties
-                DCTerms.title -> indexingSimpleMultiLang(obj).apply {
-                    withJsonObject("title").putIfNotBlank(first, second)
-                }
-
-
-                DCAT.mediaType -> putIfNotNull("media_type", obj.visitWith(MediaTypeVisitor))
-                DCAT.downloadURL -> withJsonArray("download_url").addIfNotBlank(
-                    obj.visitWith(
-                        StandardVisitor
-                    ) as String?
-                )
-
-                DCAT.byteSize -> putIfNotNull("byte_size", indexingInteger(obj))
-                SPDX.checksum -> if (obj.isResource) putIfNotEmpty(
-                    "checksum",
-                    indexingChecksum(obj.asResource())
-                )
-
-                FOAF.page -> withJsonArray("page").addIfNotEmpty(
-                    indexingPage(
-                        obj,
-                        defaultLang
-                    )
-                )
-
-                DCTerms.language -> withJsonArray("language").addIfNotNull(
-                    obj.visitWith(
-                        LanguageVisitor
-                    )
-                )
-
-                DCTerms.conformsTo -> withJsonArray("conforms_to").addIfNotEmpty(
-                    indexingLabeledResource(obj)
-                )
-
-                DCTerms.issued -> putIfNotNull("issued", indexingDateTime(obj))
-                DCTerms.modified -> putIfNotNull("modified", indexingDateTime(obj))
-                DCTerms.rights -> putIfNotNull("rights", indexingLabeledResource(obj))
-                ADMS.status -> putIfNotNull("status", indexingConceptScheme(obj, ADMSStatus))
-                DCAT.spatialResolutionInMeters -> withJsonArray("spatial_resolution_in_meters").addIfNotNull(
-                    indexingInteger(obj)
-                )
-
-                DCAT.temporalResolution -> withJsonArray("temporal_resolution").addIfNotBlank(
-                    obj.visitWith(
-                        LabeledVisitor
-                    ) as String?
-                )
-
-                DCAT.accessService -> withJsonArray("access_service").addIfNotEmpty(
-                    indexingAccessService(
-                        obj,
-                        defaultLang
-                    )
-                )
-
-                DCAT.compressFormat -> putIfNotNull(
-                    "compress_format",
-                    obj.visitWith(DocumentVisitor) as JsonObject?
-                )
-
-                DCAT.packageFormat -> putIfNotNull(
-                    "package_format",
-                    obj.visitWith(DocumentVisitor) as JsonObject?
-                )
-
-                ODRL.hasPolicy -> putIfNotBlank(
-                    "has_policy",
-                    obj.visitWith(StandardVisitor) as String?
-                )
-
-                DCTerms.type -> {
-                    val type = indexingType(obj, DistributionType)
-                    type.remove("id")
-                    putIfNotNull("type", type)
-                }
-
-                R5R.applicableLegislation -> withJsonArray("applicable_legislation")
-                    .addIfNotBlank(obj.visitWith(StandardVisitor) as String?)
-            }
+        if (predicate == DCTerms.description) {
+            indexingSimpleMultiLang(obj).let { resultPairs.add(it) }
         }
     }
 
-    else -> JsonObject() // it is not a resource
+    return resultPairs
 }
 
-fun indexingHasPurposeHealthData(node: RDFNode): Pair<String, String?>? {
-    // TODO check if we can ensure that the node is a Resource, similar to other indexing functions here
-    var resultPair: Pair<String, String?>? = null
-    node.asResource().listProperties().forEachRemaining { (_, predicate, obj) ->
-        when (predicate) {
-            DCTerms.description -> {
-                resultPair = indexingSimpleMultiLang(obj)
-            }
+fun indexingProvenanceHealthData(node: RDFNode): List<Pair<String, String?>> {
+    val resultPairs = mutableListOf<Pair<String, String?>>()
+
+    val resource = node.asResource()
+    resource.listProperties().forEachRemaining { stmt ->
+        val predicate = stmt.predicate
+        val obj = stmt.`object`
+
+        if (predicate == RDFS.label) {
+            indexingSimpleMultiLang(obj).let { resultPairs.add(it) }
         }
     }
-    return resultPair
+
+    return resultPairs
 }
 
 fun indexingWikidataLabeledResource(node: RDFNode): JsonObject {
@@ -474,19 +349,6 @@ fun fetchWikidataInfoAsJson(wikidataLink: String): String {
     }
 }
 
-fun fetchHealthCategoryDescriptionFromControlledVocabulary(healthCategory: String): String? {
-    val healthDataService = HealthDataServiceSingleton.instance
-    val future: CompletableFuture<String> =
-        healthDataService.fetchHealthCategoryDescriptionFromVocabulary(healthCategory)
-
-    return try {
-        future.get()  // This will block until the future is complete
-    } catch (e: Exception) {
-        log.error("Error occurred while fetching data for health category $healthCategory", e)
-        return ""
-    }
-}
-
 fun indexingCodeValuesHealthData(node: RDFNode): JsonObject {
     return when (node) {
         is Resource -> {
@@ -519,43 +381,27 @@ fun indexingWasGeneratedByHealthData(node: RDFNode): String? {
     }
 }
 
-fun indexingCustomLabeledResource(node: RDFNode, delimiter: String): JsonObject {
-    return when (node) {
-        is Resource -> {
-            JsonObject()
-                .putIfNotBlank("label", node.asResource().uri.substringAfterLast(delimiter))
-                .putIfNotBlank("resource", node.asResource().uri)
-                .putIfNotNull("id", node.asResource().uri)
-        }
-
-        else -> JsonObject()
-    }
-}
-
-fun indexingHealthCategoryHealthData(node: RDFNode, delimiter: String): JsonObject {
-    return when (node) {
-        is Resource -> {
-            val healthCategory = node.asResource().uri.substringAfterLast(delimiter)
-            val healthCategoryDescription =
-                fetchHealthCategoryDescriptionFromControlledVocabulary(healthCategory)
-
-            JsonObject()
-                .putIfNotBlank("label", healthCategoryDescription ?: "")
-                .putIfNotBlank("resource", node.asResource().uri)
-                .putIfNotNull("id", healthCategory)
-        }
-
-        else -> JsonObject()
-    }
-}
-
 fun indexingHasLegalBasisHealthData(node: RDFNode): JsonArray {
     val jsonArray = JsonArray()
 
     if (node is Resource) {
         // Create the main object with label and resource
         val mainObject = JsonObject()
-            .putIfNotBlank("label", node.getProperty(DCTerms.description)?.string)
+
+        // Collect all multilingual descriptions into one JsonObject
+        val label = JsonObject()
+        node.listProperties(DCTerms.description)
+            .forEachRemaining { stmt ->
+                val (lang, text) = indexingSimpleMultiLang(stmt.`object`)
+                if (!text.isNullOrBlank()) {
+                    label.put(lang, text)
+                }
+            }
+
+        // Add the label object to the main object if it is not empty
+        if (!label.isEmpty) {
+            mainObject.put("label", label)
+        }
 
         // Collect all DCTerms.source resources
         val sources = node.listProperties(DCTerms.source)
@@ -616,6 +462,81 @@ fun indexingLandingPageHealthData(node: RDFNode): JsonObject = when (node) {
 
     else -> JsonObject() // it is not a resource
 }
+
+/**
+ *  Helper that, given a dcat:Distribution Resource referenced by adms:sample,
+ *  extracts all its CSVW column definitions and returns them as a Vert.x JsonArray.
+ *
+ * @param dist The ADMS Sample Distribution resource.
+ * @return A JsonArray containing the extracted variables.
+ */
+fun extractVariablesFromAdmsSampleDistribution(dist: Resource): JsonArray {
+    // Define the CSVW namespace and the properties we care about
+    val csvwNS   = "http://www.w3.org/ns/csvw#"
+    val pTABLE  = ResourceFactory.createProperty(csvwNS, "table")
+    val pCOLUMN = ResourceFactory.createProperty(csvwNS, "column")
+    val pNAME   = ResourceFactory.createProperty(csvwNS, "name")
+    val pTITLES = ResourceFactory.createProperty(csvwNS, "titles")
+    val pDTYPE  = ResourceFactory.createProperty(csvwNS, "datatype")
+    val pPROPURL = ResourceFactory.createProperty(csvwNS, "propertyUrl")
+
+    // Prepare a JsonArray to collect each column’s JSON
+    val vars = JsonArray()
+
+    // Find the RDF node that represents the CSVW TableGroup.
+    // It lives at the URI declared in dcat:downloadURL or dcat:accessURL.
+    val tg = listOf(
+        DCAT.downloadURL,
+        DCAT.accessURL
+    ).firstNotNullOfOrNull { dist.getProperty(it)?.`object`?.asResource() }
+
+    //If we found that TableGroup resource, iterate its csvw:table children
+    tg?.listProperties(pTABLE)?.forEachRemaining { tblStmt ->
+        val tbl = tblStmt.`object`.asResource()
+
+        // For each csvw:table, iterate its csvw:column children
+        tbl.listProperties(pCOLUMN).forEachRemaining { colStmt ->
+            val c = colStmt.`object`.asResource()
+
+            // multilingual helper for titles & description
+            // we use indexingSimpleMultiLang helper to get a (lang, text) pair
+            // and then put that text under the correct language code
+            val titlesJson = JsonObject().apply {
+                indexingSimpleMultiLang(c.getProperty(pTITLES)?.`object` ?: c.model.createLiteral("", "en"))
+                    .also { (lang, text) -> text?.let { put(lang, it) } }
+            }
+            val descJson = JsonObject().apply {
+                indexingSimpleMultiLang(c.getProperty(DCTerms.description)?.`object` ?: c.model.createLiteral("", "en"))
+                    .also { (lang, text) -> text?.let { put(lang, it) } }
+            }
+
+            // Pull out the simple name & datatype literals (or empty string if missing)
+            val name  = c.getProperty(pNAME)?.`object`?.asLiteral()?.string.orEmpty()
+            val dtype = c.getProperty(pDTYPE)?.`object`?.asLiteral()?.string.orEmpty()
+
+            // normalize csvw:propertyUrl to a string (URI or literal)
+            val propertyUrl = c.getProperty(pPROPURL)?.`object`?.let { node ->
+                when {
+                    node.isResource -> node.asResource().uri
+                    node.isLiteral  -> node.asLiteral().string
+                    else            -> ""
+                }
+            }.orEmpty()
+
+            vars.add(
+                JsonObject()
+                    .put("name", name)
+                    .put("titles", titlesJson)
+                    .put("datatype", dtype)
+                    .put("description", descJson)
+                    .put("propertyUrl",  propertyUrl)
+            )
+        }
+    }
+    // Return the completed array of column definitions
+    return vars
+}
+
 
 // PIVEAU
 //----------------------------------------------------------------------------------------------------------------------
@@ -1121,7 +1042,7 @@ fun indexingAnnotations(node: RDFNode): JsonArray = when (node) {
 }
 
 fun indexingSimpleMultiLang(node: RDFNode): Pair<String, String?> = when (node) {
-    is Literal -> Pair(node.asLiteral().language.ifBlank { "en" }, node.asLiteral().string)
+    is Literal -> Pair(node.asLiteral().language.ifBlank { "en" }.take(2), node.asLiteral().string)
     else -> Pair("en", null)
 }
 

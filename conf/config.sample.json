@@ -38,35 +38,38 @@
   "PIVEAU_HUB_LOAD_VOCABULARIES_FETCH": false,
   "PIVEAU_HUB_XML_DECLARATION": false,
   "PIVEAU_TRANSLATION_SERVICE": {
-    "enable": false,
+    "enable": true,
     "accepted_languages": [
-      "en",
       "bg",
-      "hr",
       "cs",
       "da",
-      "nl",
+      "de",
+      "el",
+      "en",
+      "es",
       "et",
       "fi",
       "fr",
-      "el",
-      "hu",
       "ga",
+      "hr",
+      "hu",
+      "is",
       "it",
-      "lv",
       "lt",
+      "lv",
       "mt",
+      "nb",
+      "nl",
+      "nn",
       "pl",
       "pt",
       "ro",
       "sk",
       "sl",
-      "es",
-      "sv",
-      "nb",
-      "de"
+      "sv"
     ],
-    "translation_service_url": "https://www.url.eu/translation-service/",
+    "api_key": "",
+    "translation_service_url": "http://localhost:8084/translation-service",
     "callback_url": "http://localhost:8080/translation"
   },
   "PIVEAU_DATA_UPLOAD": {
@@ -124,4 +127,3 @@
     "key": "PRIVATE KEY HERE"
   }
 }
-

@@ -30,10 +30,10 @@
         <kotlin.code.style>official</kotlin.code.style>
         <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
         <kotlin.compiler.languageVersion>2.0</kotlin.compiler.languageVersion>
-        <vertx.version>4.5.13</vertx.version>
+        <vertx.version>4.5.21</vertx.version>
         <vertx.verticle>io.piveau.hub.MainVerticle</vertx.verticle>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <apache.jena.version>5.2.0</apache.jena.version>
+        <apache.jena.version>5.5.0</apache.jena.version>
         <maven.compiler.release>17</maven.compiler.release>
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm</maven.build.timestamp.format>
         <exec-maven-plugin.version>3.3.0</exec-maven-plugin.version>
@@ -65,7 +65,11 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>1.81</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -153,12 +157,12 @@
         <dependency>
             <groupId>io.piveau.indexing</groupId>
             <artifactId>piveau-indexing</artifactId>
-            <version>1.0.4</version>
+            <version>1.0.7</version>
         </dependency>
         <dependency>
             <groupId>io.piveau.pipe</groupId>
             <artifactId>pipe-launcher</artifactId>
-            <version>4.1.2</version>
+            <version>4.1.3</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
@@ -232,12 +236,12 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.78</version>
+            <version>1.81</version>
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>1.78</version>
+            <version>1.81</version>
         </dependency>
         <dependency>
             <groupId>com.nimbusds</groupId>

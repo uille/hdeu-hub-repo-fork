@@ -62,28 +62,26 @@ aws:
   secrets:
     provider: aws
     objects: []
+  envSecretsMap: {}
 ```
 
 - `enabled`: Enables or disables secret integration.
 - `provider`: The CSI provider (aws).
 - `objects`: A list of secrets and their keys to fetch from AWS Secrets Manager.
+- `envSecretsMap`: Maps environment variable names to the corresponding secret keys retrieved from AWS Secrets Manager.
 
 ### Example Configuration
 
-Here's an example of how to define secrets in your values.yaml file:
-
+Here's an example of how to define secrets in your `values.yaml` file:
 
 ```yaml
-apiVersion: secrets-store.csi.x-k8s.io/v1
-kind: SecretProviderClass
-metadata:
-  name: <release-name>-spc
-spec:
-  provider: aws
-  parameters:
-    objects: |
-      - objectName: "HEALTHDATA_VIRTUOSO_SECRET"
-        objectType: "secretsmanager"
+aws:
+  enabled: true
+  secrets:
+    provider: aws
+    objects:
+      - name: HEALTHDATA_VIRTUOSO_SECRET
+        objectType: secretsmanager
         jmesPath:
           - path: username
             objectAlias: username
@@ -93,8 +91,8 @@ spec:
             objectAlias: virtuoso_config_url
           - path: dba_password
             objectAlias: dba_password
-      - objectName: "HEALTHDATA_SHADOW_VIRTUOSO_SECRET"
-        objectType: "secretsmanager"
+      - name: HEALTHDATA_SHADOW_VIRTUOSO_SECRET
+        objectType: secretsmanager
         jmesPath:
           - path: shadow_username
             objectAlias: shadow_username
@@ -104,8 +102,8 @@ spec:
             objectAlias: shadow_virtuoso_config_url
           - path: shadow_dba_password
             objectAlias: shadow_dba_password
-      - objectName: "HEALTHDATA_API_KEYS"
-        objectType: "secretsmanager"
+      - name: HEALTHDATA_API_KEYS
+        objectType: secretsmanager
         jmesPath:
           - path: hub_repo_api_key
             objectAlias: hub_repo_api_key
@@ -113,32 +111,8 @@ spec:
             objectAlias: hub_search_service_api_key
           - path: hub_store_data_upload_api_key
             objectAlias: hub_store_data_upload_api_key
-  secretObjects:
-    - secretName: <release-name>-secrets
-      type: Opaque
-      data:
-      - objectName: username
-        key: username
-      - objectName: password
-        key: password
-      - objectName: virtuoso_config_url
-        key: virtuoso_config_url
-      - objectName: shadow_username
-        key: shadow_username
-      - objectName: shadow_password
-        key: shadow_password
-      - objectName: shadow_virtuoso_config_url
-        key: shadow_virtuoso_config_url
-      - objectName: dba_password
-        key: dba_password
-      - objectName: shadow_dba_password
-        key: shadow_dba_password
-      - objectName: hub_repo_api_key
-        key: hub_repo_api_key
-      - objectName: hub_search_service_api_key
-        key: hub_search_service_api_key
-      - objectName: hub_store_data_upload_api_key
-        key: hub_store_data_upload_api_key
+          - path: translation_api_key
+            objectAlias: translation_api_key
 ```
 
 ### SecretProviderClass Template (Auto-Generated)
@@ -184,6 +158,8 @@ spec:
             objectAlias: hub_search_service_api_key
           - path: hub_store_data_upload_api_key
             objectAlias: hub_store_data_upload_api_key
+          - path: translation_api_key
+            objectAlias: translation_api_key
   secretObjects:
     - secretName: <release-name>-secrets
       type: Opaque
@@ -210,6 +186,8 @@ spec:
         key: hub_search_service_api_key
       - objectName: hub_store_data_upload_api_key
         key: hub_store_data_upload_api_key
+      - objectName: translation_api_key
+        key: translation_api_key
 ```
 
 ### Mapping Overview
@@ -236,13 +214,15 @@ Below is a full example of mapping:
 | `HEALTHDATA_API_KEYS`                | `hub_repo_api_key`                | `hub_repo_api_key`             |
 |                                      | `hub_search_service_api_key`      | `hub_search_service_api_key`   |
 |                                      | `hub_store_data_upload_api_key`   | `hub_store_data_upload_api_key` |
+|                                      | `translation_api_key`             | `translation_api_key`          |
 
 ### How to Use
 
 1. Ensure that **AWS Secrets Manager** is configured with the required secrets.
 2. Set `aws.enabled: true` in `values.yaml`.
-3. Deploy the Helm chart.
-4. The application will retrieve secrets automatically via the CSI driver.
+3. Define the list of secrets in `aws.secrets.objects` and their environment variable mappings in `aws.envSecretsMap`.
+4. Deploy the Helm chart.
+5. The application will retrieve secrets automatically via the CSI driver.
 
 For more details, refer to:
 

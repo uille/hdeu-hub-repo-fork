@@ -15,6 +15,10 @@
  */
 package io.piveau.hub;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import io.piveau.hub.dataobjects.DatasetHelper;
 import io.piveau.hub.services.translation.TranslationServiceUtils;
 import io.piveau.rdf.RDFMimeTypes;
@@ -23,20 +27,19 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
+import java.util.List;
+import java.util.Map;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.vocabulary.DCTerms;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-@DisplayName("Testing translation utilities")
+@DisplayName("TranslationUtilsTest - Testing translation utilities")
 @ExtendWith(VertxExtension.class)
 class TranslationUtilsTest {
     private static final Logger log = LoggerFactory.getLogger(TranslationUtilsTest.class);
@@ -94,7 +97,7 @@ class TranslationUtilsTest {
     @Test
     @DisplayName("Build translation request without old translations")
     void buildTranslationRequest(VertxTestContext testContext) {
-        JsonObject request = TranslationServiceUtils.buildTranslationRequest(datasetHelper, null, false);
+        JsonObject request = TranslationServiceUtils.buildTranslationRequest(datasetHelper, null);
         if (log.isDebugEnabled()) {
             log.debug(request.encodePrettily());
         }
@@ -107,7 +110,7 @@ class TranslationUtilsTest {
     @Test
     @DisplayName("Build translation request with just one change")
     void buildTranslationRequest2(VertxTestContext testContext) {
-        JsonObject request = TranslationServiceUtils.buildTranslationRequest(datasetHelper, oldDatasetHelper, false);
+        JsonObject request = TranslationServiceUtils.buildTranslationRequest(datasetHelper, oldDatasetHelper);
         if (log.isDebugEnabled()) {
             log.debug(request.encodePrettily());
         }
@@ -123,7 +126,7 @@ class TranslationUtilsTest {
     @Test
     @DisplayName("Build translation request from old model")
     void buildTranslationRequest3(VertxTestContext testContext) {
-        JsonObject request = TranslationServiceUtils.buildTranslationRequest(oldDatasetHelper, null, false);
+        JsonObject request = TranslationServiceUtils.buildTranslationRequest(oldDatasetHelper, null);
         if (log.isDebugEnabled()) {
             log.debug(request.encodePrettily());
         }

@@ -20,16 +20,15 @@ import io.piveau.hub.services.metrics.MetricsServiceVerticle;
 import io.piveau.rdf.Piveau;
 import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.test.MockTripleStore;
-import io.piveau.utils.JenaUtils;
 import io.vertx.core.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.Timeout;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
+import io.vertx.serviceproxy.ServiceException;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.riot.Lang;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,10 +37,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Testing the metrics service")
+@DisplayName("MetricImplServiceTest - Testing the metrics service")
 @ExtendWith(VertxExtension.class)
 class MetricImplServiceTest {
 
@@ -57,7 +55,9 @@ class MetricImplServiceTest {
         DeploymentOptions options = new DeploymentOptions()
                 .setWorker(true)
                 .setConfig(new JsonObject()
-                        .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig()));
+                        .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
+                        .put(Constants.ENV_PIVEAU_HUB_VALIDATOR, new JsonObject().put("history", true))
+                        .put(Constants.ENV_PIVEAU_HUB_SEARCH_SERVICE, new JsonObject().put("enabled", true)));
 
         Future<String> mockFuture = new MockTripleStore()
                 .loadGraph("https://piveau.io/id/catalogue/test-catalog", "example_catalog.ttl")
@@ -110,16 +110,31 @@ class MetricImplServiceTest {
 
     @Test
     @DisplayName("Create historic graph and retrieve it")
-    @Disabled
     void testHistoricMetrics(Vertx vertx, VertxTestContext testContext) {
-        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TURTLE)
-                .compose(result -> metricsService.putMetrics(datasetId, exampleMetric_2, RDFMimeTypes.TURTLE))
+        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TRIG)
+                .compose(result -> metricsService.putMetrics(datasetId, exampleMetric_2, RDFMimeTypes.TRIG))
                 .compose(result -> metricsService.getMetrics(datasetId, true, RDFMimeTypes.TURTLE))
-                .onSuccess(content -> {
-                    // TODO check history content
+                .onSuccess(content -> testContext.verify(() -> {
+                    assertNotNull(content, "Historic content should not be null");
+
+                    Model historicModel = Piveau.toModel(content.getBytes(), RDFMimeTypes.TURTLE);
+                    assertNotNull(historicModel, "Historic model could not be parsed");
+
                     testContext.completeNow();
-                })
+                }))
                 .onFailure(testContext::failNow);
+    }
+
+    @Test
+    @DisplayName("Fails with general Exception if tripleStore throws")
+    void testPutMetrics_tripleStoreThrows_failsWithException(VertxTestContext testContext) {
+        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TURTLE)
+                .onSuccess(v -> testContext.failNow("Expected failure due to tripleStore error"))
+                .onFailure(err -> {
+                    assertTrue(err instanceof ServiceException);
+                    assertEquals(500, ((ServiceException) err).failureCode());
+                    testContext.completeNow();
+                });
     }
 
     @Test
@@ -135,6 +150,109 @@ class MetricImplServiceTest {
                 })
                 .onFailure(cause -> testContext.completeNow());
     }
+
+//    @Test
+//    @DisplayName("DeleteMetrics should remove the metrics graph from the triple store")
+//    void testDeleteMetricsRemovesGraph(VertxTestContext testContext) {
+//        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TURTLE)
+//                .compose(result -> metricsService.getMetrics(datasetId, false, RDFMimeTypes.TURTLE))
+//                .compose(fetched -> {
+//                    // Ensure it was actually added
+//                    assertNotNull(fetched);
+//                    return metricsService.deleteMetrics(datasetId, catalogueId);
+//                })
+//                .compose(v -> metricsService.getMetrics(datasetId, false, RDFMimeTypes.TURTLE))
+//                .onSuccess(content -> {
+//                    // This means deletion did not happen correctly
+//                    LOGGER.error("Expected deletion, but metrics still present:\n{}", content);
+//                    testContext.failNow("Metrics still exist after deletion.");
+//                })
+//                .onFailure(cause -> {
+//                    // Expected path: getMetrics fails because data was deleted
+//                    LOGGER.info("Metrics successfully deleted. Retrieval failed as expected: {}", cause.getMessage());
+//                    testContext.completeNow();
+//                });
+//    }
+
+    @DisplayName("PutMetrics with empty content should fail")
+    @Test
+    void testPutMetricsEmptyContent(VertxTestContext testContext) {
+        metricsService.putMetrics(datasetId, "", RDFMimeTypes.TURTLE)
+                .onSuccess(res -> testContext.failNow("Expected failure on empty content"))
+                .onFailure(err -> testContext.completeNow());
+    }
+
+    @DisplayName("PutMetrics with invalid RDF content should fail")
+    @Test
+    void testPutMetricsInvalidRdf(VertxTestContext testContext) {
+        String invalidRdf = "This is not RDF content";
+        metricsService.putMetrics(datasetId, invalidRdf, RDFMimeTypes.TURTLE)
+                .onSuccess(res -> testContext.failNow("Expected failure on invalid RDF"))
+                .onFailure(err -> testContext.completeNow());
+    }
+
+    @DisplayName("GetMetrics with invalid datasetId should fail")
+    @Test
+    void testGetMetricsInvalidDataset(VertxTestContext testContext) {
+        metricsService.getMetrics("invalid-dataset", false, RDFMimeTypes.TURTLE)
+                .onSuccess(res -> testContext.failNow("Expected failure on invalid dataset"))
+                .onFailure(err -> testContext.completeNow());
+    }
+
+    @DisplayName("DeleteMetrics with invalid datasetId should fail")
+    @Test
+    void testDeleteMetricsInvalidDataset(VertxTestContext testContext) {
+        metricsService.deleteMetrics("invalid-dataset", catalogueId)
+                .onSuccess(res -> testContext.failNow("Expected failure on invalid dataset"))
+                .onFailure(err -> testContext.completeNow());
+    }
+
+    @DisplayName("PutMetrics indexes score correctly")
+    @Test
+    void testPutMetricsIndexesScore(Vertx vertx, VertxTestContext testContext) {
+        // Prepare a metric with scoring to trigger indexScore path
+        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TRIG)
+                .onSuccess(res -> testContext.completeNow())
+                .onFailure(testContext::failNow);
+    }
+
+    @DisplayName("PutMetrics with quad format triggers metrics extraction")
+    @Test
+    void testPutMetricsWithQuadFormat(VertxTestContext testContext) {
+        // Use exampleMetric_1 in TRIG format to test quad branch
+        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TRIG)
+                .onSuccess(res -> testContext.completeNow())
+                .onFailure(testContext::failNow);
+    }
+
+    @DisplayName("DeleteMetrics fails if graph deletion fails")
+    @Test
+    void testDeleteMetricsGraphDeletionFails(VertxTestContext testContext) {
+        // Mock tripleStore to fail deletion or simulate failure by deleting twice
+        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TURTLE)
+                .compose(v -> metricsService.deleteMetrics(datasetId, catalogueId))
+                .compose(v -> metricsService.deleteMetrics(datasetId, catalogueId))
+                .onSuccess(v -> testContext.failNow("Expected failure on deleting non-existent graph"))
+                .onFailure(err -> testContext.completeNow());
+    }
+
+    @Test
+    @DisplayName("deleteMetrics removes graph from triple store")
+    void testDeleteMetricsActuallyDeletesGraph(VertxTestContext testContext) {
+        metricsService.putMetrics(datasetId, exampleMetric_1, RDFMimeTypes.TURTLE)
+                .compose(res -> {
+                   return metricsService.deleteMetrics(datasetId, catalogueId);
+                })
+                .compose(v -> metricsService.getMetrics(datasetId, false, RDFMimeTypes.TURTLE))
+                .onSuccess(retrieved -> {
+                    testContext.failNow("Expected no metrics after deletion, but got: " + retrieved);
+                })
+                .onFailure(err -> {
+                    // Expected path: getMetrics fails because the graph is gone
+                    testContext.completeNow();
+                });
+    }
+
 
     private void compareModels(VertxTestContext testContext, String expected, String received) {
         testContext.verify(() -> {
