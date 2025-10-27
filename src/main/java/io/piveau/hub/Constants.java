@@ -61,8 +61,6 @@ public final class Constants {
 
   public static final String ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT = "HEALTHDATA_ENDPOINTS_TIMEOUT";
 
-  public static final String ENV_PIVEAU_HEALTHDATA_ENDPOINTS_TIMEOUT = "HEALTHDATA_ENDPOINTS_TIMEOUT";
-
   // Authentication via JWT
   public static final String AUTHENTICATION_TYPE = "auth";
   public static final String JWT_AUTH = "jwtAuth";
