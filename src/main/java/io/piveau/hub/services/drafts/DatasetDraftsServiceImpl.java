@@ -19,11 +19,10 @@ import io.piveau.dcatap.DCATAPUriRef;
 import io.piveau.dcatap.DCATAPUriSchema;
 import io.piveau.dcatap.Prefixes;
 import io.piveau.dcatap.TripleStore;
+import io.piveau.hub.Constants;
 import io.piveau.hub.Defaults;
 import io.piveau.hub.dataobjects.DatasetHelper;
-import io.piveau.hub.Constants;
 import io.piveau.rdf.Piveau;
-import io.piveau.utils.JenaUtils;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -31,6 +30,10 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.serviceproxy.ServiceException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jena.query.QuerySolution;
 import org.apache.jena.rdf.model.Model;
@@ -41,11 +44,6 @@ import org.apache.jena.vocabulary.DCAT;
 import org.apache.jena.vocabulary.DCTerms;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class DatasetDraftsServiceImpl implements DatasetDraftsService {
 

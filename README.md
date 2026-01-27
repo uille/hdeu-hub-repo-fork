@@ -52,6 +52,12 @@ $ mvn clean package
 $ docker build -t=hdeu-hub-repo .
 ```
 
+Note: We run the container as uid/gid 1001. On Linux, ensure bind-mounted paths are owned by 1001:1001 (or at least readable/writable as needed)
+e.g.
+```bash
+sudo chown -R 1001:1001 hub-repo/conf
+```
+
 Run:
 ```bash
 $ docker run -p 8080:8080 -d hdeu-hub-repo

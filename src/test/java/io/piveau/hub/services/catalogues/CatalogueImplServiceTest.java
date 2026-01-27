@@ -13,38 +13,39 @@
  * OF ANY KIND, either express or implied. See the Licence for the specific language
  * governing permissions and limitations under the Licence.
  */
-package io.piveau.hub;
+package io.piveau.hub.services.catalogues;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.piveau.dcatap.DCATAPUriSchema;
-import io.piveau.hub.services.catalogues.CataloguesService;
-import io.piveau.hub.services.catalogues.CataloguesServiceVerticle;
+import io.piveau.hub.Constants;
 import io.piveau.rdf.Piveau;
 import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.test.MockTripleStore;
-import io.piveau.utils.JenaUtils;
-import io.vertx.core.*;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.Checkpoint;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
 import io.vertx.serviceproxy.ServiceException;
-import org.apache.jena.query.Dataset;
+import java.util.ArrayList;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ResIterator;
 import org.apache.jena.rdf.model.Resource;
-import org.apache.jena.riot.Lang;
 import org.apache.jena.vocabulary.DCAT;
 import org.apache.jena.vocabulary.RDF;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
-import java.util.ArrayList;
-import java.util.Iterator;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Testing the catalogue service")
 @ExtendWith(VertxExtension.class)
@@ -268,26 +269,29 @@ class CatalogueImplServiceTest {
                 .onFailure(testContext::failNow);
     }
 
-    @Test
-    @DisplayName("Put hidden catalogue (skip indexing)")
-    void testPutHiddenCatalogue(Vertx vertx, VertxTestContext testContext) {
-        String hiddenCatalogue = """
+  @Test
+  @DisplayName("Put hidden catalogue (skip indexing)")
+  void testPutHiddenCatalogue(VertxTestContext testContext) {
+    String hiddenCatalogue = """
         @prefix edp: <http://data.europa.eu/piveau/edp#> .
         @prefix dcat: <http://www.w3.org/ns/dcat#> .
+        @prefix dct: <http://purl.org/dc/terms/> .
         @prefix ex: <http://example.org/catalog/> .
-
+        
         ex:hidden-catalogue a dcat:Catalog ;
+            dct:language  <http://publications.europa.eu/resource/authority/language/ENG> ;
+            dct:spatial <http://publications.europa.eu/resource/authority/country/ESP> ;
             edp:visibility edp:hidden .
         """;
 
-        cataloguesService.putCatalogue("hidden-catalogue", hiddenCatalogue, RDFMimeTypes.TURTLE)
-                .onSuccess(result -> testContext.verify(() -> {
-                    assertEquals("created", result);
-                    // No indexing is triggered, we rely on coverage of onFailure/onSuccess handling
-                    testContext.completeNow();
-                }))
-                .onFailure(testContext::failNow);
-    }
+    cataloguesService.putCatalogue("hidden-catalogue", hiddenCatalogue, RDFMimeTypes.TURTLE)
+        .onSuccess(result -> testContext.verify(() -> {
+          assertEquals("created", result);
+          // No indexing is triggered, we rely on coverage of onFailure/onSuccess handling
+          testContext.completeNow();
+        }))
+        .onFailure(testContext::failNow);
+  }
 
     @Test
     @DisplayName("Update an existing catalogue")
@@ -302,27 +306,30 @@ class CatalogueImplServiceTest {
                 .onFailure(testContext::failNow);
     }
 
-    @Test
-    @DisplayName("Delete a catalogue with datasets")
-    void testDeleteCatalogueWithDatasets(Vertx vertx, VertxTestContext testContext) {
-        String datasetId = "catalogue-with-datasets";
-        String withDatasets = """
+  @Test
+  @DisplayName("Delete a catalogue with datasets")
+  void testDeleteCatalogueWithDatasets(VertxTestContext testContext) {
+    String datasetId = "catalogue-with-datasets";
+    String withDatasets = """
+        @prefix dct: <http://purl.org/dc/terms/> .
         @prefix dcat: <http://www.w3.org/ns/dcat#> .
         @prefix ex: <http://example.org/> .
-
+        
         ex:%1$s a dcat:Catalog ;
+            dct:language  <http://publications.europa.eu/resource/authority/language/ENG> ;
+            dct:spatial <http://publications.europa.eu/resource/authority/country/ESP> ;
             dcat:dataset ex:ds1 ;
             dcat:record ex:rec1 .
-
+        
         ex:ds1 a dcat:Dataset .
         ex:rec1 a dcat:Resource .
         """.formatted(datasetId);
 
-        cataloguesService.putCatalogue(datasetId, withDatasets, RDFMimeTypes.TURTLE)
-                .compose(v -> cataloguesService.deleteCatalogue(datasetId))
-                .onSuccess(v -> testContext.completeNow())
-                .onFailure(testContext::failNow);
-    }
+    cataloguesService.putCatalogue(datasetId, withDatasets, RDFMimeTypes.TURTLE)
+        .compose(v -> cataloguesService.deleteCatalogue(datasetId))
+        .onSuccess(v -> testContext.completeNow())
+        .onFailure(testContext::failNow);
+  }
 
     @Test
     @DisplayName("Indexing fails but catalogue is still created")

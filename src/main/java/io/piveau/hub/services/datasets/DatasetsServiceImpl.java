@@ -667,6 +667,7 @@ public class DatasetsServiceImpl implements DatasetsService {
       result.put("distributions", uploadResponse);
       return Future.succeededFuture(result);
     } catch (Exception e) {
+      logger.error("Error getting data upload information", e);
       return Future.failedFuture(new ServiceException(500, "Internal Server Error"));
     }
   }

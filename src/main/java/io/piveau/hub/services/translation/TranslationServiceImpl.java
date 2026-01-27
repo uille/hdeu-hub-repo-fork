@@ -145,61 +145,160 @@ public class TranslationServiceImpl implements TranslationService {
         return this;
     }
 
-    @Override
-    public TranslationService receiveTranslation(JsonObject translation, Handler<AsyncResult<JsonObject>> handler) {
-        try {
-            DCATAPUriRef uriRef = DCATAPUriSchema.parseUriRef(translation.getString("id"));
+  /**
+   * Receives a translation callback and applies translated literals to the dataset RDF graph.
+   *
+   * <p><strong>Important concurrency guarantees:</strong>
+   * <ul>
+   *   <li>Translation callbacks may arrive long after the translation request was initiated.</li>
+   *   <li>During that time, the dataset may have been deleted by a user.</li>
+   *   <li>This method must therefore be resilient against late callbacks and must not
+   *       recreate deleted datasets or re-index stale data.</li>
+   * </ul>
+   *
+   * <p>To ensure correctness, this method:
+   * <ol>
+   *   <li>Checks whether the dataset graph still exists before doing any work.</li>
+   *   <li>Uses {@code ensureExists(uriRef)} to verify that the dataset and record
+   *       are still considered present by the DatasetManager.</li>
+   *   <li>Re-checks graph existence immediately before writing, to prevent
+   *       race conditions where a dataset is deleted while the translation
+   *       is being applied.</li>
+   *   <li>Silently ignores translation callbacks for deleted datasets
+   *       (returns status {@code ignored}).</li>
+   * </ol>
+   *
+   * <p>If all checks pass, the translated literals are applied, the catalog
+   * record is marked as translation-complete, the graph is persisted, and
+   * the dataset is re-indexed in OpenSearch.
+   */
+  @Override
+  public TranslationService receiveTranslation(
+      JsonObject translation,
+      Handler<AsyncResult<JsonObject>> handler) {
 
-            PiveauContext resourceContext = moduleContext.extend(uriRef.getId());
-            if (resourceContext.log().isDebugEnabled()) {
-                resourceContext.log().debug("Incoming translation: {}", translation.encodePrettily());
+    try {
+      DCATAPUriRef uriRef = DCATAPUriSchema.parseUriRef(translation.getString("id"));
+      final String graphName = uriRef.getDatasetGraphName();
+
+      PiveauContext resourceContext = moduleContext.extend(uriRef.getId());
+      if (resourceContext.log().isDebugEnabled()) {
+        resourceContext.log().debug("Incoming translation: {}", translation.encodePrettily());
+      }
+
+      // First guard: if the dataset graph does not exist at all, the dataset
+      // was already deleted before this callback arrived.
+      datasetManager.existGraph(graphName)
+          .compose(exists -> {
+            if (!exists) {
+              resourceContext.log().info(
+                  "Translation received but dataset graph does not exist (likely deleted). Ignoring. id={}",
+                  translation.getString("id")
+              );
+              return Future.succeededFuture((Model) null);
             }
 
-            datasetManager.getGraph(uriRef.getDatasetGraphName())
-                    .compose(model -> {
-                        TranslationServiceUtils.applyTranslations(model, translation.getJsonObject("dict", new JsonObject()));
+            // Strong semantic check: ensure the dataset/record still exists
+            // according to DatasetManager semantics.
+            // If this fails, the dataset has been deleted in the meantime.
+            return datasetManager.ensureExists(uriRef)
+                .compose(v -> datasetManager.getGraph(graphName))
+                .compose(model -> {
+                  // Defensive guard: empty or missing model should never be written back,
+                  // otherwise we risk recreating a deleted dataset.
+                  if (model == null || model.isEmpty()) {
+                    resourceContext.log().info(
+                        "Translation received but dataset graph is empty (likely deleted). Ignoring. id={}",
+                        translation.getString("id")
+                    );
+                    return Future.succeededFuture((Model) null);
+                  }
 
-                        // Updating catalog record with translation information
-                        Resource record = model.getResource(uriRef.getRecordUriRef());
-                        completeTranslationProcess(record);
+                  // Apply translated literals to the RDF model
+                  TranslationServiceUtils.applyTranslations(
+                      model,
+                      translation.getJsonObject("dict", new JsonObject())
+                  );
 
-                        return Future.<Model>future(promise ->
-                                datasetManager.setGraph(uriRef.getDatasetGraphName(), model, false)
-                                        .onSuccess(id -> promise.complete(model))
-                                        .onFailure(promise::fail)
-                        );
-                    })
-                    .onSuccess(model -> {
-                        if (indexService != null) {
-                            Resource record = model.getResource(uriRef.getRecordUriRef());
-                            // We need catalogue id and sourceLang (default language)
-                            JsonObject data = translation.getJsonObject("data", new JsonObject());
-                            JsonObject index = Indexing.indexingDataset(
-                                    model.getResource(uriRef.getDatasetUriRef()),
-                                    record,
-                                    data.getString("catalogueId"),
-                                    data.getString("defaultLanguage"));
+                  // Mark the catalog record as translation completed
+                  Resource record = model.getResource(uriRef.getRecordUriRef());
+                  completeTranslationProcess(record);
 
-                            indexService.addDatasetPut(index, ar -> {
-                                if (ar.succeeded()) {
-                                    log.debug("Dataset successfully indexed");
-                                } else {
-                                    log.error("Index dataset", ar.cause());
-                                }
-                            });
+                  // Final race-condition guard:
+                  // the dataset may have been deleted after we loaded the graph
+                  // but before we attempt to write it back.
+                  return datasetManager.existGraph(graphName)
+                      .compose(stillExists -> {
+                        if (!stillExists) {
+                          resourceContext.log().info(
+                              "Dataset graph deleted before translation write. Ignoring. id={}",
+                              translation.getString("id")
+                          );
+                          return Future.succeededFuture((Model) null);
                         }
-                        resourceContext.log().info("Translation stored");
-                        handler.handle(Future.succeededFuture(new JsonObject().put("status", "success")));
-                    })
-                    .onFailure(cause -> {
-                        resourceContext.log().error("Translation", cause);
-                        handler.handle(Future.failedFuture(cause));
-                    });
-        } catch (Exception e) {
-            handler.handle(Future.failedFuture(e));
-        }
-        return this;
+
+                        // Safe to persist updated graph
+                        return datasetManager
+                            .setGraph(graphName, model, false)
+                            .map(model);
+                      });
+                })
+                // Any failure in ensureExists/getGraph is treated as "dataset no longer exists"
+                .recover(err -> {
+                  resourceContext.log().info(
+                      "Translation received but dataset no longer exists. Ignoring. id={}",
+                      translation.getString("id")
+                  );
+                  return Future.succeededFuture((Model) null);
+                });
+          })
+          .onSuccess(model -> {
+            // Ignored case (dataset deleted or missing)
+            if (model == null) {
+              handler.handle(
+                  Future.succeededFuture(new JsonObject().put("status", "ignored"))
+              );
+              return;
+            }
+
+            // Index the dataset only after a successful graph update
+            if (indexService != null) {
+              Resource record = model.getResource(uriRef.getRecordUriRef());
+              JsonObject data = translation.getJsonObject("data", new JsonObject());
+
+              JsonObject index = Indexing.indexingDataset(
+                  model.getResource(uriRef.getDatasetUriRef()),
+                  record,
+                  data.getString("catalogueId"),
+                  data.getString("defaultLanguage")
+              );
+
+              indexService.addDatasetPut(index, ar -> {
+                if (ar.succeeded()) {
+                  log.debug("Dataset successfully indexed");
+                } else {
+                  log.error("Index dataset", ar.cause());
+                }
+              });
+            }
+
+            resourceContext.log().info("Translation stored");
+            handler.handle(
+                Future.succeededFuture(new JsonObject().put("status", "success"))
+            );
+          })
+          .onFailure(cause -> {
+            resourceContext.log().error("Translation", cause);
+            handler.handle(Future.failedFuture(cause));
+          });
+
+    } catch (Exception e) {
+      handler.handle(Future.failedFuture(e));
     }
+
+    return this;
+  }
+
 
     private void initTranslationProcess(Resource record, String sourceLang) {
         record.removeAll(EDP.originalLanguage);

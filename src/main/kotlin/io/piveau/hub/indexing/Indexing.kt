@@ -19,8 +19,9 @@ package io.piveau.hub.indexing
 
 import io.piveau.dcatap.*
 import io.piveau.dcatap.visitors.GeoSpatialVisitor
-import io.piveau.hub.services.healthdata.HealthDataService
+import io.piveau.hub.util.rdf.CV
 import io.piveau.hub.util.rdf.DPV
+import io.piveau.hub.util.rdf.GEODCATAP
 import io.piveau.hub.util.rdf.HEALTHDCATAP
 import io.piveau.json.*
 import io.piveau.profile.indexingResource
@@ -29,39 +30,20 @@ import io.piveau.utils.normalizeDateTime
 import io.piveau.vocabularies.*
 import io.piveau.vocabularies.vocabulary.*
 import io.vertx.core.Future
-import io.vertx.core.Vertx
 import io.vertx.core.json.JsonArray
 import io.vertx.core.json.JsonObject
 import io.vertx.kotlin.coroutines.coAwait
 import kotlinx.coroutines.runBlocking
 import org.apache.jena.datatypes.xsd.XSDDatatype
-import org.apache.jena.rdf.model.Literal
-import org.apache.jena.rdf.model.Model
-import org.apache.jena.rdf.model.RDFNode
-import org.apache.jena.rdf.model.Resource
-import org.apache.jena.rdf.model.ResourceFactory
+import org.apache.jena.rdf.model.*
 import org.apache.jena.sparql.vocabulary.FOAF
 import org.apache.jena.vocabulary.*
-import org.json.JSONObject
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.util.concurrent.CompletableFuture
-
 
 val log: Logger = LoggerFactory.getLogger("io.piveau.hub.Indexing")
 lateinit var catalogInstr: JsonObject
 lateinit var datasetInstr: JsonObject
-
-// create a singleton HealthDataService object
-object HealthDataServiceSingleton {
-    private val vertx = Vertx.vertx()
-
-    // Singleton instance of HealthDataService
-    val instance: HealthDataService by lazy {
-        HealthDataService(vertx)
-    }
-}
-
 
 fun init(catalogInstructions: JsonObject, datasetInstructions: JsonObject) {
     catalogInstr = catalogInstructions
@@ -129,10 +111,16 @@ fun indexHealthDcatAp(
 
 
                             HEALTHDCATAP.healthTheme -> withJsonArray("health_theme")
-                                .addIfNotEmpty(indexingWikidataLabeledResource(obj))
+                                .addIfNotEmpty(indexingHealthThemeHealthData(obj))
+
+                            // Health Data Access Body
+                            HEALTHDCATAP.hdab -> putIfNotEmpty("hdab", indexingHealthAgent(obj))
 
                             else -> {
-                                log.debug("Unknown predicate for HEALTHDCATAP namespace: $predicate")
+                                log.debug(
+                                    "Unknown predicate for HEALTHDCATAP namespace: {}",
+                                    predicate
+                                )
                             }
                         }
                     } catch (e: Exception) {
@@ -167,6 +155,9 @@ fun indexHealthDcatAp(
                             DCTerms.provenance -> indexingProvenanceHealthData(obj).forEach { (first, second) ->
                                 withJsonObject("provenance").putIfNotBlank(first, second)
                             }
+
+                            // Publisher
+                            DCTerms.publisher -> putIfNotEmpty("publisher", indexingHealthAgent(obj))
                         }
                     } catch (e: Exception) {
                         log.error("Error when handling the predicate: $predicate", e)
@@ -232,6 +223,17 @@ fun indexHealthDcatAp(
                     }
                 }
 
+
+                if (predicate.nameSpace == GEODCATAP.NS) {  // Check the namespace of the predicate
+                    try {
+                        when (predicate) {
+                            // Health Data Access Body
+                            GEODCATAP.custodian -> putIfNotEmpty("custodian", indexingHealthAgent(obj))
+                        }
+                    } catch (e: Exception) {
+                        log.error("Error when handling the predicate: $predicate", e)
+                    }
+                }
             }
         } catch (e: Exception) {
             log.error("Error in indexingHealthDcatAp: $e", e)
@@ -271,8 +273,7 @@ fun indexingProvenanceHealthData(node: RDFNode): List<Pair<String, String?>> {
     return resultPairs
 }
 
-fun indexingWikidataLabeledResource(node: RDFNode): JsonObject {
-    // TODO check for cases where the call to wikidata can be avoided (rdf contains all the required info)
+fun indexingHealthThemeHealthData(node: RDFNode): JsonObject {
     return when (node) {
         is Resource -> {
             val link: String =
@@ -283,12 +284,8 @@ fun indexingWikidataLabeledResource(node: RDFNode): JsonObject {
                 } else {
                     node.asResource().uri
                 }
-            // TODO check the below warning and if and how it can be avoided (we call the service from a new Vertx context)
-            //  WARN  io.vertx.core.impl.VertxImpl - You're already on a Vert.x context, are you sure you want to create a new Vertx instance?
-            val label = fetchWikidataLabelAsString(link)
 
             JsonObject()
-                .putIfNotBlank("label", label)
                 .putIfNotBlank("resource", link)
                 .putIfNotNull("id", link)
         }
@@ -301,82 +298,89 @@ fun indexingHasCodingSystemsHealthData(node: RDFNode): JsonObject {
     // TODO check for cases where the call to wikidata can be avoided (rdf contains all the required info)
     return when (node) {
         is Resource -> {
-            val link: String =
-                if (node.listProperties()
-                        .hasNext() && node.getProperty(DCTerms.identifier)?.string?.isNotEmpty() == true
-                ) {
-                    node.getProperty(DCTerms.identifier).string
-                } else {
-                    node.asResource().uri
-                }
-            // TODO check the below warning and if and how it can be avoided (we call the service from a new Vertx context)
-            //  WARN  io.vertx.core.impl.VertxImpl - You're already on a Vert.x context, are you sure you want to create a new Vertx instance?
-            val wikidataInfo =
-                fetchWikidataInfoAsJson(link)
-            val wikidataJson = JSONObject(wikidataInfo)
+            val link: String = node.asResource().uri
 
             JsonObject()
-                .putIfNotBlank("label", wikidataJson.optString("description", ""))
+                .putIfNotBlank("label", link)
                 .putIfNotBlank("resource", link)
-                .putIfNotNull("id", wikidataJson.optString("label", ""))
+                .putIfNotNull("id", link)
         }
 
         else -> JsonObject()
     }
 }
 
-fun fetchWikidataLabelAsString(wikidataLink: String): String {
-    val healthDataService = HealthDataServiceSingleton.instance
-    val future: CompletableFuture<String> = healthDataService.fetchWikidataInfo(wikidataLink, false)
+fun indexingHealthAgent(node: RDFNode): JsonObject = when (node) {
+    is Resource -> JsonObject().apply {
 
-    return try {
-        future.get()  // This will block until the future is complete
-    } catch (e: Exception) {
-        log.error("Error occurred while fetching data from $wikidataLink", e)
-        return ""
+        // 1. TYPE = dct:type
+        node.getProperty(DCTerms.type)?.`object`?.let { typeNode ->
+            putIfNotBlank("type", typeNode.visitWith(StandardVisitor) as String?)
+        }
+
+        // 2. NAME = foaf:name
+        node.getProperty(FOAF.name)?.`object`?.let { nameNode ->
+            putIfNotBlank("name", nameNode.visitWith(StandardVisitor) as String?)
+        }
+
+        // 3. MULTILANG NOTE = dct:description → healthAgentNote
+        val notesJson = JsonObject()
+        node.listProperties(DCTerms.description).forEachRemaining { stmt ->
+            val obj = stmt.`object`
+            if (obj.isLiteral) {
+                val lit = obj.asLiteral()
+                val lang = lit.language?.takeIf { it.isNotBlank() } ?: "und"
+                val value = lit.string
+                if (!value.isNullOrBlank()) {
+                    notesJson.put(lang, value)
+                }
+            }
+        }
+        if (!notesJson.isEmpty) {
+            put("healthAgentNote", notesJson)
+        }
+
+        // 4. CONTACT POINT (cv:ContactPoint)
+        val contactPointRes = node.getPropertyResourceValue(CV.contactPoint)
+        contactPointRes?.let { cp ->
+
+            // EMAIL = cv:email
+            cp.getProperty(CV.email)?.`object`?.let { emailNode ->
+                putIfNotBlank("email", emailNode.visitWith(StandardVisitor) as String?)
+            }
+
+            // HOMEPAGE = cv:contactPage
+            cp.getProperty(CV.contactPage)?.`object`?.let { homepageNode ->
+                putIfNotBlank("homepage", homepageNode.visitWith(StandardVisitor) as String?)
+            }
+        }
     }
-}
 
-fun fetchWikidataInfoAsJson(wikidataLink: String): String {
-    val healthDataService = HealthDataServiceSingleton.instance
-    val future: CompletableFuture<String> = healthDataService.fetchWikidataInfo(wikidataLink, true)
-
-    return try {
-        future.get()  // This will block until the future is complete
-    } catch (e: Exception) {
-        log.error("Error occurred while fetching data from $wikidataLink", e)
-        return ""
-    }
+    else -> JsonObject()
 }
 
 fun indexingCodeValuesHealthData(node: RDFNode): JsonObject {
     return when (node) {
-        is Resource -> {
-            // TODO check the below warning and if and how it can be avoided (we call the service from a new Vertx context)
-            //  WARN  io.vertx.core.impl.VertxImpl - You're already on a Vert.x context, are you sure you want to create a new Vertx instance?
-            val wikidataInfo =
-                fetchWikidataInfoAsJson(node.getProperty(SKOS.hasTopConcept).resource.uri)
-            val wikidataJson = JSONObject(wikidataInfo)
+        is Literal -> {
+            val (lang, text) = indexingSimpleMultiLang(node)
 
             JsonObject()
-                .putIfNotBlank("code", node.getProperty(SKOS.notation).string)
-                .putIfNotBlank("description", node.getProperty(SKOS.prefLabel).string)
-                .putIfNotBlank("codingSystem", wikidataJson.optString("alias", ""))
-                .putIfNotBlank("codingSystemDescription", wikidataJson.optString("description", ""))
+                .put("label", JsonObject().put(lang, text))
         }
 
         else -> JsonObject()
     }
-
-
 }
 
 fun indexingWasGeneratedByHealthData(node: RDFNode): String? {
-    return when (node) {
-        is Resource -> {
-            return node.getProperty(RDFS.label).string
-        }
+    if (node !is Resource) return null
 
+    val stmt = node.getProperty(DCTerms.type) ?: return null
+    val obj = stmt.`object`
+
+    return when {
+        obj.isResource -> obj.asResource().uri
+        obj.isLiteral -> obj.asLiteral().string
         else -> null
     }
 }
@@ -430,27 +434,13 @@ fun indexingHasLegalBasisHealthData(node: RDFNode): JsonArray {
 fun indexingConformsToHealthData(node: RDFNode): JsonObject {
     return when (node) {
         is Resource -> {
-            if (node.asResource().uri.contains("wikidata", true)) {
-                // TODO check the below warning and if and how it can be avoided (we call the service from a new Vertx context)
-                //  WARN  io.vertx.core.impl.VertxImpl - You're already on a Vert.x context, are you sure you want to create a new Vertx instance?
-                val wikidataInfo = fetchWikidataInfoAsJson(node.asResource().uri)
-                val wikidataJson = JSONObject(wikidataInfo)
+                val uri = node.asResource().uri
 
                 JsonObject()
-                    .putIfNotBlank("label", wikidataJson.optString("label", ""))
-                    .putIfNotBlank("resource", node.asResource().uri)
-                    .putIfNotBlank("id", wikidataJson.optString("alias", ""))
-
-            } else {
-                val label = node.asResource().getProperty(RDFS.label).string
-
-                JsonObject()
-                    .putIfNotBlank("label", label)
-                    .putIfNotBlank("resource", node.asResource().uri)
-                    .putIfNotBlank("id", label)
-            }
+                    .putIfNotBlank("label", uri)
+                    .putIfNotBlank("resource", uri)
+                    .putIfNotBlank("id", uri)
         }
-
         else -> JsonObject()
     }
 }
@@ -499,16 +489,10 @@ fun extractVariablesFromAdmsSampleDistribution(dist: Resource): JsonArray {
             val c = colStmt.`object`.asResource()
 
             // multilingual helper for titles & description
-            // we use indexingSimpleMultiLang helper to get a (lang, text) pair
+            // we use indexingMultiLang2 helper to get a (lang, text) pair
             // and then put that text under the correct language code
-            val titlesJson = JsonObject().apply {
-                indexingSimpleMultiLang(c.getProperty(pTITLES)?.`object` ?: c.model.createLiteral("", "en"))
-                    .also { (lang, text) -> text?.let { put(lang, it) } }
-            }
-            val descJson = JsonObject().apply {
-                indexingSimpleMultiLang(c.getProperty(DCTerms.description)?.`object` ?: c.model.createLiteral("", "en"))
-                    .also { (lang, text) -> text?.let { put(lang, it) } }
-            }
+            val titlesJson = indexingMultiLang2(c, pTITLES, "en")
+            val descJson   = indexingMultiLang2(c, DCTerms.description, "en")
 
             // Pull out the simple name & datatype literals (or empty string if missing)
             val name  = c.getProperty(pNAME)?.`object`?.asLiteral()?.string.orEmpty()
@@ -1044,6 +1028,58 @@ fun indexingAnnotations(node: RDFNode): JsonArray = when (node) {
 fun indexingSimpleMultiLang(node: RDFNode): Pair<String, String?> = when (node) {
     is Literal -> Pair(node.asLiteral().language.ifBlank { "en" }.take(2), node.asLiteral().string)
     else -> Pair("en", null)
+}
+
+/**
+ * Collects all literal values for a given property from a resource into a JSON object keyed by language.
+ *
+ * Example output:
+ * { "en": "alalla", "bg": "…", "fr": "…" }
+ *
+ * Language tags like "bg-t-en-t0-mtec" are normalized to "bg".
+ */
+fun indexingMultiLang2(resource: Resource, property: Property, defaultLang: String = "en"): JsonObject {
+    val out = JsonObject()
+
+    resource.listProperties(property).forEachRemaining { st ->
+        val obj = st.`object`
+        if (!obj.isLiteral) return@forEachRemaining
+
+        val lit = obj.asLiteral()
+        val text = lit.string?.trim().orEmpty()
+        if (text.isBlank()) return@forEachRemaining
+
+        val lang = normalizeLang2(lit.language).ifBlank { defaultLang }
+        out.put(lang, text)
+    }
+
+    // Optional: ensure there is at least defaultLang key (only if you want)
+    // if (out.isEmpty) out.put(defaultLang, "")
+
+    return out
+}
+
+/**
+ * Normalizes RDF language tags to a 2-letter language code.
+ *
+ * Supports:
+ * - Standard tags: "en", "en-GB", "pt_BR" -> "en", "pt"
+ * - Machine translation tags used by this pipeline: "bg-t-en-t0-mtec" -> "bg"
+ *
+ * Falls back to "en" if tag is blank or cannot be parsed.
+ */
+fun normalizeLang2(tag: String?): String {
+    val t = tag?.trim().orEmpty()
+    if (t.isBlank()) return "en"
+
+    // Machine-translation tag format: "<target>-t-<source>-t0-mtec"
+    // We want the target part (before "-t-")
+    val mtPrefix = t.substringBefore("-t-", missingDelimiterValue = t)
+
+    // Reduce "en-GB" or "pt_BR" etc to primary language subtag
+    val primary = mtPrefix.substringBefore('-').substringBefore('_')
+
+    return primary.takeIf { it.length >= 2 }?.substring(0, 2)?.lowercase() ?: "en"
 }
 
 fun indexingMultiLang(

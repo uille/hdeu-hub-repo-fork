@@ -214,7 +214,7 @@ public class DatasetDraftHandler {
         }
     }
 
-    private String removeCatalogRecord(String payload, String acceptType) {
+    public String removeCatalogRecord(String payload, String acceptType) {
 
         Model model = Piveau.toModel(payload.getBytes(), acceptType);
         ResIterator resIterator = model.listSubjectsWithProperty(RDF.type, DCAT.CatalogRecord);

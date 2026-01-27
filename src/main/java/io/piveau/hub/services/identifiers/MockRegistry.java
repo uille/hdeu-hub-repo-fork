@@ -21,8 +21,6 @@ import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.WebClient;
-import org.apache.jena.rdf.model.Resource;
-
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;

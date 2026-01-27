@@ -13,34 +13,35 @@
  * OF ANY KIND, either express or implied. See the Licence for the specific language
  * governing permissions and limitations under the Licence.
  */
-package io.piveau.hub;
+package io.piveau.hub.services.translation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+import io.piveau.hub.Constants;
 import io.piveau.hub.dataobjects.DatasetHelper;
 import io.piveau.hub.services.DatasetHelperMessageCodec;
 import io.piveau.hub.services.index.IndexService;
-import io.piveau.hub.services.translation.TranslationService;
-import io.piveau.hub.services.translation.TranslationServiceVerticle;
 import io.piveau.hub.util.IndexMappingLoader;
 import io.piveau.profile.PiveauProfile;
 import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.test.MockTripleStore;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.junit5.*;
+import io.vertx.junit5.Checkpoint;
+import io.vertx.junit5.VertxExtension;
+import io.vertx.junit5.VertxTestContext;
+import java.util.Arrays;
 import org.apache.http.HttpStatus;
 import org.apache.jena.vocabulary.DCTerms;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
-import java.util.Arrays;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @DisplayName("TranslationServiceImplTest - Testing the Translation Service verticle")
 @ExtendWith(VertxExtension.class)

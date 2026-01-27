@@ -19,11 +19,11 @@ This product includes dynamically linked software developed by third parties whi
 
 ## Logback Classic Module
 Licenses:
-- ch.qos.logback:logback-classic:1.5.13 - http://logback.qos.ch/logback
+- ch.qos.logback:logback-classic:1.5.24 - http://logback.qos.ch/logback
 
 ## Logback Core Module
 Licenses:
-- ch.qos.logback:logback-core:1.5.13 - http://logback.qos.ch/logback
+- ch.qos.logback:logback-core:1.5.24 - http://logback.qos.ch/logback
 
 ## Titanium JCS
 Licenses:
@@ -136,51 +136,51 @@ Licenses:
 
 ## Netty/Buffer
 Licenses:
-- io.netty:netty-buffer:4.1.124.Final - https://netty.io/netty
+- io.netty:netty-buffer:4.1.130.Final - https://netty.io/netty
 
 ## Netty/Codec
 Licenses:
-- io.netty:netty-codec:4.1.124.Final - https://netty.io/netty
+- io.netty:netty-codec:4.1.130.Final - https://netty.io/netty
 
 ## Netty/Codec/DNS
 Licenses:
-- io.netty:netty-codec-dns:4.1.124.Final - https://netty.io/netty-codec
+- io.netty:netty-codec-dns:4.1.130.Final - https://netty.io/netty-codec
 
 ## Netty/Codec/HTTP
 Licenses:
-- io.netty:netty-codec-http:4.1.124.Final - https://netty.io/netty-codec
+- io.netty:netty-codec-http:4.1.130.Final - https://netty.io/netty-codec
 
 ## Netty/Codec/HTTP2
 Licenses:
-- io.netty:netty-codec-http2:4.1.124.Final - https://netty.io/netty-codec
+- io.netty:netty-codec-http2:4.1.130.Final - https://netty.io/netty-codec
 
 ## Netty/Codec/Socks
 Licenses:
-- io.netty:netty-codec-socks:4.1.124.Final - https://netty.io/netty-codec
+- io.netty:netty-codec-socks:4.1.130.Final - https://netty.io/netty-codec
 
 ## Netty/Common
 Licenses:
-- io.netty:netty-common:4.1.124.Final - https://netty.io/netty
+- io.netty:netty-common:4.1.130.Final - https://netty.io/netty
 
 ## Netty/Handler
 Licenses:
-- io.netty:netty-handler:4.1.124.Final - https://netty.io/netty
+- io.netty:netty-handler:4.1.130.Final - https://netty.io/netty
 
 ## Netty/Handler/Proxy
 Licenses:
-- io.netty:netty-handler-proxy:4.1.124.Final - https://netty.io/netty-handler
+- io.netty:netty-handler-proxy:4.1.130.Final - https://netty.io/netty-handler
 
 ## Netty/Resolver
 Licenses:
-- io.netty:netty-resolver:4.1.124.Final - https://netty.io/netty
+- io.netty:netty-resolver:4.1.130.Final - https://netty.io/netty
 
 ## Netty/Resolver/DNS
 Licenses:
-- io.netty:netty-resolver-dns:4.1.124.Final - https://netty.io/netty-resolver
+- io.netty:netty-resolver-dns:4.1.130.Final - https://netty.io/netty-resolver
 
 ## Netty/Resolver/DNS/Classes/MacOS
 Licenses:
-- io.netty:netty-resolver-dns-classes-macos:4.1.124.Final - https://netty.io/netty-resolver-dns-classes
+- io.netty:netty-resolver-dns-classes-macos:4.1.130.Final - https://netty.io/netty-resolver-dns-classes
 
 ## Netty/Resolver/DNS/Native/MacOS
 Licenses:
@@ -188,11 +188,11 @@ Licenses:
 
 ## Netty/Transport
 Licenses:
-- io.netty:netty-transport:4.1.124.Final - https://netty.io/netty
+- io.netty:netty-transport:4.1.130.Final - https://netty.io/netty
 
 ## Netty/Transport/Native/Unix/Common
 Licenses:
-- io.netty:netty-transport-native-unix-common:4.1.124.Final - https://netty.io/netty-transport-native-unix
+- io.netty:netty-transport-native-unix-common:4.1.130.Final - https://netty.io/netty-transport-native-unix
 
 ## OpenTelemetry Java
 Licenses:
@@ -238,95 +238,95 @@ Licenses:
 
 ## Termd Core
 Licenses:
-- io.termd:termd-core:1.1.10
+- io.termd:termd-core:1.1.11
 
 ## Vert.x Auth Common
 Licenses:
-- io.vertx:vertx-auth-common:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-auth-parent/vertx-auth
+- io.vertx:vertx-auth-common:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-auth-parent/vertx-auth
 
 ## Vert.x Auth JWT
 Licenses:
-- io.vertx:vertx-auth-jwt:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-auth-parent/vertx-auth
+- io.vertx:vertx-auth-jwt:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-auth-parent/vertx-auth
 
 ## Vert.x Auth OAuth2
 Licenses:
-- io.vertx:vertx-auth-oauth2:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-auth-parent/vertx-auth
+- io.vertx:vertx-auth-oauth2:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-auth-parent/vertx-auth
 
 ## Vert.x Bridge Common
 Licenses:
-- io.vertx:vertx-bridge-common:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-bridge
+- io.vertx:vertx-bridge-common:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-bridge
 
 ## Vert.x Circuit Breaker
 Licenses:
-- io.vertx:vertx-circuit-breaker:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-circuit
+- io.vertx:vertx-circuit-breaker:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-circuit
 
 ## Vert.x Codegen
 Licenses:
-- io.vertx:vertx-codegen:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx
+- io.vertx:vertx-codegen:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx
 
 ## Vert.x Config
 Licenses:
-- io.vertx:vertx-config:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-config-parent/vertx
+- io.vertx:vertx-config:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-config-parent/vertx
 
 ## Vert.x Core
 Licenses:
-- io.vertx:vertx-core:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx
+- io.vertx:vertx-core:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx
 
 ## Vert.x Health Checks
 Licenses:
-- io.vertx:vertx-health-check:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-health
+- io.vertx:vertx-health-check:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-health
 
 ## Vert.x JSON Schema
 Licenses:
-- io.vertx:vertx-json-schema:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-json
+- io.vertx:vertx-json-schema:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-json
 
 ## Vert.x JUnit 5 support :: Core
 Licenses:
-- io.vertx:vertx-junit5:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx
+- io.vertx:vertx-junit5:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx
 
 ## Vert.x for Kotlin
 Licenses:
-- io.vertx:vertx-lang-kotlin:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-lang-kotlin-parent/vertx-lang
+- io.vertx:vertx-lang-kotlin:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-lang-kotlin-parent/vertx-lang
 
 ## Vert.x for Kotlin coroutines
 Licenses:
-- io.vertx:vertx-lang-kotlin-coroutines:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-lang-kotlin-parent/vertx-lang-kotlin
+- io.vertx:vertx-lang-kotlin-coroutines:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-lang-kotlin-parent/vertx-lang-kotlin
 
 ## Vert.x OpenTelemetry
 Licenses:
-- io.vertx:vertx-opentelemetry:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-tracing-parent/vertx
+- io.vertx:vertx-opentelemetry:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-tracing-parent/vertx
 
 ## Vert.x Service Proxy
 Licenses:
-- io.vertx:vertx-service-proxy:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-service
+- io.vertx:vertx-service-proxy:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-service
 
 ## Vert.x Shell
 Licenses:
-- io.vertx:vertx-shell:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx
+- io.vertx:vertx-shell:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx
 
 ## Vert.x URI Template
 Licenses:
-- io.vertx:vertx-uri-template:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-uri
+- io.vertx:vertx-uri-template:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-uri
 
 ## Vert.x Web
 Licenses:
-- io.vertx:vertx-web:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx
+- io.vertx:vertx-web:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx
 
 ## Vert.x Web Client
 Licenses:
-- io.vertx:vertx-web-client:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
+- io.vertx:vertx-web-client:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
 
 ## Vert.x Web Common
 Licenses:
-- io.vertx:vertx-web-common:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
+- io.vertx:vertx-web-common:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
 
 ## Vert.x Web OpenAPI
 Licenses:
-- io.vertx:vertx-web-openapi:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
+- io.vertx:vertx-web-openapi:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
 
 ## Vert.x Web Validation
 Licenses:
-- io.vertx:vertx-web-validation:4.5.18 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
+- io.vertx:vertx-web-validation:4.5.23 - https://github.com/vert-x3/vertx-parent/vertx-ext/vertx-ext-parent/vertx-web-parent/vertx-web
 
 ## JSR107 API and SPI
 Licenses:
@@ -338,7 +338,7 @@ Licenses:
 
 ## Byte Buddy agent
 Licenses:
-- net.bytebuddy:byte-buddy-agent:1.12.16 - https://bytebuddy.net/byte-buddy
+- net.bytebuddy:byte-buddy-agent:1.17.7 - https://bytebuddy.net/byte-buddy
 
 ## Logstash Logback Encoder
 Licenses:
@@ -506,7 +506,7 @@ Licenses:
 
 ## JGit - Core
 Licenses:
-- org.eclipse.jgit:org.eclipse.jgit:6.9.0.202403050737-r
+- org.eclipse.jgit:org.eclipse.jgit:6.10.1.202505221210-r
 
 ## RDF4J: common annotation
 Licenses:
@@ -663,7 +663,7 @@ Licenses:
 
 ## mockito-core
 Licenses:
-- org.mockito:mockito-core:4.9.0
+- org.mockito:mockito-core:5.20.0
 
 ## Mockito-Kotlin
 Licenses:

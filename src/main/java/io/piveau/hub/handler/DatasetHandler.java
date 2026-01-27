@@ -283,7 +283,7 @@ public class DatasetHandler {
    * @param catalogueId the id of the catalogue for which the dataset will be created
    * @param contentType the dataset format i.e. text/turtle, application/rdf+xml etc.
    */
-  private boolean datasetIsInvalid(RoutingContext context, String catalogueId, String contentType) {
+  public boolean datasetIsInvalid(RoutingContext context, String catalogueId, String contentType) {
     try {
       String rdfContent = context.body().asString();
       // Validate the dataset based on dcat-ap and healthdcat-ap specifications
@@ -519,7 +519,7 @@ public class DatasetHandler {
         .onFailure(cause -> HubRepo.failureResponse(context, cause));
   }
 
-  private JsonObject validateDatasetInItb(String rdf, String contentType)
+  public JsonObject validateDatasetInItb(String rdf, String contentType)
       throws ExecutionException, InterruptedException {
     String validationType = getValidationType(rdf, contentType);
     JsonObject requestBody = createDatasetValidationRequestBody(rdf, contentType, validationType);

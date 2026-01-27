@@ -13,19 +13,27 @@
  * OF ANY KIND, either express or implied. See the Licence for the specific language
  * governing permissions and limitations under the Licence.
  */
-package io.piveau.hub;
+package io.piveau.hub.services.metrics;
 
-import io.piveau.hub.services.metrics.MetricsService;
-import io.piveau.hub.services.metrics.MetricsServiceVerticle;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.piveau.hub.Constants;
 import io.piveau.rdf.Piveau;
 import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.test.MockTripleStore;
-import io.vertx.core.*;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.Timeout;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
 import io.vertx.serviceproxy.ServiceException;
+import java.util.concurrent.TimeUnit;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.riot.Lang;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,10 +42,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.concurrent.TimeUnit;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("MetricImplServiceTest - Testing the metrics service")
 @ExtendWith(VertxExtension.class)

@@ -35,7 +35,7 @@ EXPOSE 8080
 EXPOSE 8085
 EXPOSE 5000
 
-RUN mkdir -p $VERTICLE_HOME/logs && groupadd vertx && useradd -g vertx vertx && chown -R vertx $VERTICLE_HOME && chmod -R g+w $VERTICLE_HOME
+RUN mkdir -p $VERTICLE_HOME/logs && groupadd -g 1001 vertx && useradd -u 1001 -g vertx vertx && chown -R vertx $VERTICLE_HOME && chmod -R g+w $VERTICLE_HOME
 
 # Create log folder
 #RUN mkdir $LOG_HOME && chown -R vertx $LOG_HOME && chmod -R g+w $LOG_HOME

@@ -16,7 +16,6 @@
 package io.piveau.hub.services.identifiers;
 
 import io.piveau.dcatap.TripleStore;
-import io.piveau.hub.services.translation.TranslationService;
 import io.vertx.codegen.annotations.Fluent;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.AsyncResult;

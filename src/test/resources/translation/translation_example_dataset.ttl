@@ -13,14 +13,57 @@
 @prefix xml: <http://www.w3.org/XML/1998/namespace> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix edp: <https://europeandataportal.eu/voc#> .
+@prefix adms: <http://www.w3.org/ns/adms#> .
+@prefix csvw: <http://www.w3.org/ns/csvw#> .
+@prefix dpv: <https://w3id.org/dpv#> .
+@prefix healthdcatap: <http://healthdataportal.eu/ns/health#> .
 
 <https://piveau.io/set/data/test-dataset>
     a dcat:Dataset ;
     dct:title "Example Dataset"@en ;
     dct:description "Dies ist ein Beispieldatensatz"@de ;
+    dcat:keyword "heart"@en ;
+    dcat:keyword "καρδιά"@el ;
+    healthdcatap:publisherNote "Publisher note – example text"@en ;
+    healthdcatap:populationCoverage "Population coverage – adults"@en ;
+
+    dpv:hasPurpose [
+        a dpv:Purpose ;
+        dct:description "Purpose description – example text"@en
+    ] ;
+
+    dpv:hasLegalBasis [
+        a dpv:LegalBasis ;
+        dct:description "Legal basis description – example text"@en
+    ] ;
+
+    dct:provenance [
+        a dct:ProvenanceStatement ;
+        rdfs:label "Provenance label – example text"@en
+    ] ;
+
     dcat:distribution <https://piveau.io/set/distribution/1>,
         <https://piveau.io/set/distribution/2>,
-        <https://piveau.io/set/distribution/3> .
+        <https://piveau.io/set/distribution/3>,
+        [
+            a dcat:Distribution ;
+            dct:title "Anon distribution title"@en ;
+            dct:description "Anon distribution desc"@en
+        ] ;
+
+    adms:sample [
+        a dcat:Distribution ;
+        dct:title "Sample title"@en ;
+        dct:description "Sample desc"@en ;
+        dcat:downloadURL [
+            csvw:table [
+                csvw:column [
+                    csvw:titles "Age"@en ;
+                    dct:description "Age of patient"@en
+                ]
+            ]
+        ]
+    ] .
 
 <https://piveau.io/set/distribution/1>
     a dcat:Distribution ;

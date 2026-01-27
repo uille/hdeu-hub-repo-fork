@@ -1,0 +1,29 @@
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+# Catalogue URI must match what your tests use
+<https://piveau.io/id/catalogue/test-catalog>
+    dcat:record  <https://piveau.io/id/dataset/dup-target~~bogus/foreign-record>,
+                 <https://piveau.io/id/dataset/dup-target~~bogus/dup-record1>,
+                 <https://piveau.io/id/dataset/dup-target~~bogus/dup-record2> ;
+    dcat:dataset <https://piveau.io/id/dataset/dup-target~~bogus> .
+
+<https://piveau.io/id/dataset/dup-target~~bogus/foreign-record>
+    a                 dcat:CatalogRecord ;
+    dct:identifier    "foreign-target" ;
+    foaf:primaryTopic <https://piveau.io/id/dataset/dup-target~~bogus> .
+
+<https://piveau.io/id/dataset/dup-target~~bogus/dup-record1>
+    a                 dcat:CatalogRecord ;
+    dct:identifier    "dup-target" ;
+    foaf:primaryTopic <https://piveau.io/id/dataset/dup-target~~bogus> .
+
+<https://piveau.io/id/dataset/dup-target~~bogus/dup-record2>
+    a                 dcat:CatalogRecord ;
+    dct:identifier    "dup-target" ;
+    foaf:primaryTopic <https://piveau.io/id/dataset/dup-target~~bogus> .
+
+# Optional but safe:
+<https://piveau.io/id/dataset/dup-target~~bogus>
+    a dcat:Dataset .

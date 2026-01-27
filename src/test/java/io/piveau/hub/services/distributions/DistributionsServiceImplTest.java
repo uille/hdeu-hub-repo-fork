@@ -13,12 +13,17 @@
  * OF ANY KIND, either express or implied. See the Licence for the specific language
  * governing permissions and limitations under the Licence.
  */
-package io.piveau.hub;
+package io.piveau.hub.services.distributions;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.piveau.hub.Constants;
 import io.piveau.hub.services.datasets.DatasetsService;
 import io.piveau.hub.services.datasets.DatasetsServiceVerticle;
-import io.piveau.hub.services.distributions.DistributionsService;
-import io.piveau.hub.services.distributions.DistributionsServiceVerticle;
 import io.piveau.rdf.Piveau;
 import io.piveau.rdf.RDFMimeTypes;
 import io.piveau.test.MockTripleStore;
@@ -32,19 +37,16 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
 import org.apache.jena.rdf.model.Model;
-import org.apache.jena.vocabulary.DCAT;
-import org.apache.jena.vocabulary.DCTerms;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.riot.Lang;
+import org.apache.jena.vocabulary.DCAT;
+import org.apache.jena.vocabulary.DCTerms;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("DistributionsServiceImplTest - Testing the Distributions service")
 @ExtendWith(VertxExtension.class)
