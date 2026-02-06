@@ -20,8 +20,21 @@ import io.piveau.dcatap.DCATAPUriSchema;
 import io.piveau.dcatap.TripleStore;
 import io.piveau.hub.dataobjects.DatasetHelper;
 import io.piveau.hub.ext.trust.TrustHandler;
-import io.piveau.hub.handler.*;
-import io.piveau.hub.security.*;
+import io.piveau.hub.handler.CatalogueHandler;
+import io.piveau.hub.handler.DatasetDraftHandler;
+import io.piveau.hub.handler.DatasetHandler;
+import io.piveau.hub.handler.DistributionHandler;
+import io.piveau.hub.handler.IdentifiersHandler;
+import io.piveau.hub.handler.MetricHandler;
+import io.piveau.hub.handler.ResourceHandler;
+import io.piveau.hub.handler.TranslationServiceHandler;
+import io.piveau.hub.handler.VocabularyHandler;
+import io.piveau.hub.security.CatalogueIdentifierHandler;
+import io.piveau.hub.security.CataloguePermissionHandler;
+import io.piveau.hub.security.DatasetDraftPermissionHandler;
+import io.piveau.hub.security.DatasetIdentifierHandler;
+import io.piveau.hub.security.DatasetPermissionHandler;
+import io.piveau.hub.security.KeyCloakServiceVerticle;
 import io.piveau.hub.services.DatasetHelperMessageCodec;
 import io.piveau.hub.services.catalogues.CataloguesServiceVerticle;
 import io.piveau.hub.services.datasets.DatasetsServiceVerticle;
@@ -38,7 +51,9 @@ import io.piveau.hub.util.IndexMappingLoader;
 import io.piveau.hub.util.logger.PiveauLogger;
 import io.piveau.hub.util.logger.PiveauLoggerFactory;
 import io.piveau.json.ConfigHelper;
-import io.piveau.profile.*;
+import io.piveau.profile.PiveauProfile;
+import io.piveau.profile.ProfileInfo;
+import io.piveau.profile.ProfileLoader;
 import io.piveau.security.ApiKeyAuthProvider;
 import io.piveau.security.PiveauAuth;
 import io.piveau.security.PiveauAuthConfig;
@@ -68,10 +83,15 @@ import io.vertx.ext.web.openapi.RouterBuilder;
 import io.vertx.ext.web.openapi.RouterBuilderOptions;
 import io.vertx.ext.web.validation.BadRequestException;
 import io.vertx.serviceproxy.ServiceException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.*;
 
 
 /**
@@ -316,6 +336,14 @@ public class MainVerticle extends AbstractVerticle {
                                         datasetHandler.handleGetRecord(context));
 
                                 // Dataset Index
+
+                                // Reindex all datasets - uses CataloguePermissionHandler since it operates
+                                // across all catalogues without a specific catalogueId
+                                builder.operation("reindexAllDatasets")
+                                        .handler(new CataloguePermissionHandler(List.of(
+                                                Constants.KEYCLOAK_SCOPE_DATASET_UPDATE
+                                        )))
+                                        .handler(datasetHandler::handleReindexAllDatasets);
 
                                 builder.operation("getDatasetIndex")
                                         .handler(new CatalogueIdentifierHandler(

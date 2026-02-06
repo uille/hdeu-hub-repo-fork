@@ -656,6 +656,249 @@ public class DatasetsServiceImpl implements DatasetsService {
         });
   }
 
+  /**
+   * Reindexes all datasets from Virtuoso to OpenSearch.
+   * <p>
+   * This method retrieves all datasets stored in Virtuoso and sends them to the indexing service
+   * (hub-search/OpenSearch) for reindexing. The operation is performed asynchronously using Vert.x
+   * Futures to ensure non-blocking behavior and optimal performance.
+   * </p>
+   * <p>
+   * The implementation follows Vert.x best practices:
+   * <ul>
+   *   <li>Non-blocking I/O: All operations use Vert.x Future API</li>
+   *   <li>Resilience: Individual dataset failures don't stop the entire operation</li>
+   *   <li>Atomic operations: Each dataset is processed independently to avoid race conditions</li>
+   *   <li>Resource management: Uses immutable data structures where possible</li>
+   * </ul>
+   * </p>
+   * <p>
+   * Processing flow:
+   * <ol>
+   *   <li>Validates that the indexing service is available</li>
+   *   <li>Retrieves all dataset references from Virtuoso</li>
+   *   <li>For each dataset:
+   *     <ul>
+   *       <li>Fetches the complete RDF graph</li>
+   *       <li>Parses the dataset using DatasetHelper</li>
+   *       <li>Retrieves catalogue metadata (including language code)</li>
+   *       <li>Generates index object using Indexing.indexingDataset()</li>
+   *       <li>Sends to OpenSearch via indexService</li>
+   *     </ul>
+   *   </li>
+   *   <li>Aggregates results and returns summary</li>
+   * </ol>
+   * </p>
+   *
+   * @return Future containing a JsonObject with:
+   *         <ul>
+   *           <li>"message" - Status message describing the operation result</li>
+   *           <li>"totalDatasets" - Total number of datasets processed</li>
+   *           <li>"successCount" - Number of successfully indexed datasets (optional)</li>
+   *           <li>"failureCount" - Number of failed datasets (optional)</li>
+   *         </ul>
+   *         The Future fails with ServiceException if:
+   *         <ul>
+   *           <li>Indexing service is disabled (500)</li>
+   *           <li>Fatal error occurs during dataset retrieval (500)</li>
+   *         </ul>
+   */
+  @Override
+  public Future<JsonObject> reindexAllDatasets() {
+    // Validate indexing service availability early
+    if (indexService == null) {
+      logger.error("Reindex operation failed: Indexing service is not available");
+      return Future.failedFuture(new ServiceException(500, "Indexing service disabled"));
+    }
+
+    logger.info("Starting reindex operation for all datasets");
+
+    // Retrieve all dataset references from Virtuoso
+    // Note: This is a read-only operation, safe for concurrent execution
+    return datasetManager.list(0, Integer.MAX_VALUE)
+        .compose(datasetRefs -> {
+          final int totalDatasets = datasetRefs.size();
+          logger.info("Found {} datasets to reindex", totalDatasets);
+
+          // Early return if no datasets exist
+          if (totalDatasets == 0) {
+            logger.info("No datasets found in repository");
+            return Future.succeededFuture(new JsonObject()
+                .put("message", "No datasets found to reindex")
+                .put("totalDatasets", 0)
+                .put("successCount", 0)
+                .put("failureCount", 0));
+          }
+
+          // Thread-safe counters for success/failure tracking
+          // AtomicInteger ensures thread-safety without explicit synchronization
+          final java.util.concurrent.atomic.AtomicInteger successCount =
+              new java.util.concurrent.atomic.AtomicInteger(0);
+          final java.util.concurrent.atomic.AtomicInteger failureCount =
+              new java.util.concurrent.atomic.AtomicInteger(0);
+
+          // Build list of futures for parallel processing
+          // Each future represents an independent dataset indexing operation
+          // This approach prevents blocking and enables concurrent processing
+          List<Future<Void>> indexFutures = new ArrayList<>(totalDatasets);
+
+          for (DCATAPUriRef datasetRef : datasetRefs) {
+            // Create a separate future for each dataset to ensure isolation
+            // This prevents race conditions and ensures each dataset is processed independently
+            Future<Void> indexFuture = indexSingleDataset(datasetRef, successCount, failureCount);
+            indexFutures.add(indexFuture);
+          }
+
+          // Use Future.all() to wait for all operations to complete
+          // This is non-blocking and follows Vert.x async patterns
+          // Individual failures won't cause the composite future to fail
+          return Future.all(indexFutures)
+              .map(compositeFuture -> {
+                final int successTotal = successCount.get();
+                final int failureTotal = failureCount.get();
+
+                logger.info("Reindex operation completed: {} total, {} succeeded, {} failed",
+                    totalDatasets, successTotal, failureTotal);
+
+                return new JsonObject()
+                    .put("message", "Reindexing completed")
+                    .put("totalDatasets", totalDatasets)
+                    .put("successCount", successTotal)
+                    .put("failureCount", failureTotal);
+              });
+        })
+        .recover(error -> {
+          // Catch-all error handler for fatal failures (e.g., database connection issues)
+          logger.error("Fatal error during reindex operation: {}", error.getMessage(), error);
+          return Future.failedFuture(new ServiceException(500,
+              "Error during reindex operation: " + error.getMessage()));
+        });
+  }
+
+  /**
+   * Indexes a single dataset to OpenSearch.
+   * <p>
+   * This private helper method encapsulates the indexing logic for a single dataset,
+   * ensuring proper error handling and isolation between datasets. The method follows
+   * Vert.x best practices by returning a Future and avoiding blocking operations.
+   * </p>
+   * <p>
+   * Thread-safety considerations:
+   * <ul>
+   *   <li>All operations are async and non-blocking</li>
+   *   <li>AtomicInteger counters ensure thread-safe incrementing</li>
+   *   <li>No shared mutable state between invocations</li>
+   *   <li>Each dataset processing is isolated and independent</li>
+   * </ul>
+   * </p>
+   *
+   * @param datasetRef The dataset reference containing ID and graph name
+   * @param successCount Thread-safe counter for successful indexing operations
+   * @param failureCount Thread-safe counter for failed indexing operations
+   * @return Future<Void> that completes when indexing finishes (success or failure)
+   *         This future always succeeds to prevent one dataset failure from affecting others
+   */
+  private Future<Void> indexSingleDataset(
+      DCATAPUriRef datasetRef,
+      java.util.concurrent.atomic.AtomicInteger successCount,
+      java.util.concurrent.atomic.AtomicInteger failureCount) {
+
+    final String datasetId = datasetRef.getId();
+
+    // First, query Virtuoso to find which catalogue this dataset belongs to
+    // This is necessary because DatasetHelper.create(Model) doesn't automatically set catalogueId
+    return datasetManager.catalogue(datasetRef.getUriRef())
+        .compose(catalogueResource -> {
+          // Extract catalogue ID from the catalogue resource URI
+          final String catalogueId = DCATAPUriSchema.parseUriRef(catalogueResource.getURI()).getId();
+
+          // Log to verify correct catalogue ID is retrieved for this specific dataset
+          logger.debug("Dataset {} belongs to catalogue {}", datasetId, catalogueId);
+
+          // Now fetch the dataset graph from Virtuoso
+          return datasetManager.getGraph(datasetRef.getGraphName())
+              .compose(dataset -> {
+                // Parse dataset into helper object
+                DatasetHelper helper;
+                try {
+                  helper = DatasetHelper.create(dataset);
+                } catch (Exception e) {
+                  logger.error("Failed to parse dataset {}: {}", datasetId, e.getMessage(), e);
+                  failureCount.incrementAndGet();
+                  // Return succeeded future to continue processing other datasets
+                  return Future.succeededFuture();
+                }
+
+                // Retrieve catalogue information (with caching for performance)
+                return catalogueInfo(catalogueId)
+                    .compose(catalogueInfo -> {
+                      // Generate index object using the specified indexing method
+                      // This is a synchronous operation but typically fast
+                      JsonObject indexObject;
+                      try {
+                        indexObject = Indexing.indexingDataset(
+                            helper.resource(),
+                            helper.recordResource(),
+                            catalogueId,
+                            catalogueInfo.getString("langCode", "en"));
+
+                        // Log to verify the catalogue ID is correctly included in the index object
+                        logger.debug("Indexing dataset {} with catalogue {} to OpenSearch",
+                            datasetId, catalogueId);
+                      } catch (Exception e) {
+                        logger.error("Failed to generate index object for dataset {}: {}",
+                            datasetId, e.getMessage(), e);
+                        failureCount.incrementAndGet();
+                        return Future.succeededFuture();
+                      }
+
+                      // Send to OpenSearch asynchronously
+                      // Using Future.future() to wrap the callback-based API
+                      return Future.future(promise ->
+                          indexService.addDatasetPut(indexObject, ir -> {
+                            if (ir.succeeded()) {
+                              logger.debug("Successfully indexed dataset: {}", datasetId);
+                              successCount.incrementAndGet();
+                              promise.complete();
+                            } else {
+                              logger.error("Failed to index dataset {} to OpenSearch: {}",
+                                  datasetId, ir.cause().getMessage());
+                              failureCount.incrementAndGet();
+                              // Complete (not fail) to continue processing other datasets
+                              promise.complete();
+                            }
+                          })
+                      );
+                    })
+                    .recover(error -> {
+                      // Handle any errors in the dataset processing chain
+                      logger.error("Error processing dataset {}: {}", datasetId, error.getMessage());
+                      failureCount.incrementAndGet();
+                      // Return succeeded future to continue with other datasets
+                      return Future.succeededFuture();
+                    });
+              })
+              .recover(error -> {
+                // Handle errors in dataset graph retrieval
+                logger.error("Failed to retrieve graph for dataset {}: {}", datasetId, error.getMessage());
+                failureCount.incrementAndGet();
+                return Future.succeededFuture();
+              });
+        })
+        .recover(error -> {
+          // Handle errors in catalogue lookup
+          // This is expected if dataset has no catalogue reference
+          if (error instanceof TripleStoreException tse && tse.getCode() == 404) {
+            logger.warn("Dataset {} has no catalogue reference in Virtuoso, skipping indexing", datasetId);
+          } else {
+            logger.error("Failed to find catalogue for dataset {}: {}", datasetId, error.getMessage());
+          }
+          failureCount.incrementAndGet();
+          return Future.succeededFuture();
+        })
+        .mapEmpty(); // Convert to Future<Void>
+  }
+
   @Override
   public Future<JsonObject> getDataUploadInformation(String datasetId, String catalogueId,
       String resultDataset) {
@@ -842,9 +1085,11 @@ public class DatasetsServiceImpl implements DatasetsService {
 
   private Future<JsonObject> catalogueInfo(String catalogueId) {
     if (cache.containsKey(catalogueId)) {
+      logger.debug("Using cached catalogue info for catalogue {}", catalogueId);
       return Future.succeededFuture(cache.get(catalogueId));
     }
 
+    logger.debug("Querying Virtuoso for catalogue info: {}", catalogueId);
     DCATAPUriRef catalogueUriRef = DCATAPUriSchema.createForCatalogue(catalogueId);
     String query = sparqlQueryPool.format("catalogueQuery", catalogueUriRef.getGraphName(),
         catalogueUriRef.getUriRef());
@@ -882,7 +1127,11 @@ public class DatasetsServiceImpl implements DatasetsService {
             if (result.isEmpty()) {
               throw new ServiceException(404, "Catalogue not found");
             } else {
+              // Cache the result using putIfAbsent to avoid race conditions
+              // This ensures that if multiple threads try to cache the same catalogue,
+              // only one will succeed, and all will use the same cached value
               cache.putIfAbsent(catalogueId, result);
+              logger.debug("Cached catalogue info for catalogue {}", catalogueId);
               return result;
             }
           } else {

@@ -907,6 +907,35 @@ paths:
   # DATASET INDEXING #
   ####################
 
+  /datasets/index:
+    post:
+      description: This function is reserved for internal use only and is not part of our public API offerings. As an authorized user, you can reindex all datasets from Virtuoso to the distributed document store (hub-search/OpenSearch).
+      summary: Reindex all datasets
+      operationId: reindexAllDatasets
+      tags:
+        - Datasets
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Reindexing operation started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  totalDatasets:
+                    type: integer
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Internal Server Error
+
   /datasets/{datasetId}/index:
     parameters:
       - $ref: '#/components/parameters/DatasetId'

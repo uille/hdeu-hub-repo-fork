@@ -519,6 +519,63 @@ public class DatasetHandler {
         .onFailure(cause -> HubRepo.failureResponse(context, cause));
   }
 
+  /**
+   * Handles HTTP requests to reindex all datasets from Virtuoso to OpenSearch.
+   * <p>
+   * This endpoint triggers a comprehensive reindexing operation that retrieves all datasets
+   * from the Virtuoso triple store and sends them to the OpenSearch indexing service.
+   * The operation is performed asynchronously to avoid blocking the event loop.
+   * </p>
+   * <p>
+   * <b>Security:</b> This endpoint requires authentication and DATASET_UPDATE permission.
+   * It is reserved for internal administrative use only.
+   * </p>
+   * <p>
+   * <b>HTTP Method:</b> POST<br>
+   * <b>Path:</b> /datasets/index<br>
+   * <b>Content-Type:</b> application/json
+   * </p>
+   * <p>
+   * <b>Success Response (200):</b>
+   * <pre>
+   * {
+   *   "message": "Reindexing completed",
+   *   "totalDatasets": 150,
+   *   "successCount": 148,
+   *   "failureCount": 2
+   * }
+   * </pre>
+   * </p>
+   * <p>
+   * <b>Error Responses:</b>
+   * <ul>
+   *   <li>401 Unauthorized - Missing or invalid authentication</li>
+   *   <li>403 Forbidden - Insufficient permissions</li>
+   *   <li>500 Internal Server Error - Indexing service unavailable or fatal error</li>
+   * </ul>
+   * </p>
+   * <p>
+   * <b>Implementation notes:</b>
+   * <ul>
+   *   <li>Non-blocking: Uses Vert.x async patterns with Future API</li>
+   *   <li>Resilient: Individual dataset failures don't stop the entire operation</li>
+   *   <li>Long-running: For large datasets, this operation may take considerable time</li>
+   *   <li>Idempotent: Safe to retry if the operation fails</li>
+   * </ul>
+   * </p>
+   *
+   * @param context The Vert.x routing context containing the HTTP request and response
+   *                This context is managed by Vert.x and is thread-safe within the event loop
+   */
+  public void handleReindexAllDatasets(RoutingContext context) {
+    datasetsService.reindexAllDatasets()
+        .onSuccess(result -> context.response()
+            .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+            .setStatusCode(200)
+            .end(result.encodePrettily()))
+        .onFailure(cause -> HubRepo.failureResponse(context, cause));
+  }
+
   public JsonObject validateDatasetInItb(String rdf, String contentType)
       throws ExecutionException, InterruptedException {
     String validationType = getValidationType(rdf, contentType);

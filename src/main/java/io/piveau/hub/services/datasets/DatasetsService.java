@@ -60,6 +60,61 @@ public interface DatasetsService {
 
     Future<JsonObject> indexDataset(String datasetId, String catalogueId);
 
+    /**
+     * Reindexes all datasets from Virtuoso to OpenSearch.
+     * <p>
+     * This method performs a comprehensive reindexing operation that retrieves all datasets
+     * stored in the Virtuoso triple store and sends them to the OpenSearch indexing service
+     * for reindexing. The operation is executed asynchronously using Vert.x Future API to
+     * ensure non-blocking behavior.
+     * </p>
+     * <p>
+     * <b>Use Cases:</b>
+     * <ul>
+     *   <li>After index schema changes or updates</li>
+     *   <li>Recovery from index corruption or data loss</li>
+     *   <li>Synchronization after bulk data updates</li>
+     *   <li>Migration to a new OpenSearch cluster</li>
+     * </ul>
+     * </p>
+     * <p>
+     * <b>Performance Characteristics:</b>
+     * <ul>
+     *   <li>Asynchronous and non-blocking</li>
+     *   <li>Processes datasets concurrently where possible</li>
+     *   <li>Execution time scales with number of datasets</li>
+     *   <li>Individual failures don't stop the entire operation</li>
+     * </ul>
+     * </p>
+     * <p>
+     * <b>Error Handling:</b>
+     * The method is resilient to individual dataset failures. If a single dataset fails
+     * to index, the operation continues with remaining datasets and reports the failure
+     * count in the result.
+     * </p>
+     * <p>
+     * <b>Thread Safety:</b>
+     * This method is thread-safe and can be called concurrently. However, running multiple
+     * reindex operations simultaneously may cause resource contention and is not recommended.
+     * </p>
+     *
+     * @return A Future containing a JsonObject with the following properties:
+     *         <ul>
+     *           <li><b>message</b> (String) - Human-readable status message</li>
+     *           <li><b>totalDatasets</b> (Integer) - Total number of datasets processed</li>
+     *           <li><b>successCount</b> (Integer) - Number of successfully indexed datasets</li>
+     *           <li><b>failureCount</b> (Integer) - Number of datasets that failed to index</li>
+     *         </ul>
+     *         The Future fails with ServiceException(500) if:
+     *         <ul>
+     *           <li>The indexing service is not available or disabled</li>
+     *           <li>A fatal error occurs during dataset retrieval from Virtuoso</li>
+     *         </ul>
+     *
+     * @see #indexDataset(String, String) for indexing a single dataset
+     */
+    Future<JsonObject> reindexAllDatasets();
+
     Future<JsonObject> getDataUploadInformation(String datasetId, String catalogueId, String resultDataset);
 
 }
