@@ -116,6 +116,14 @@ fun indexHealthDcatAp(
                             // Health Data Access Body
                             HEALTHDCATAP.hdab -> putIfNotEmpty("hdab", indexingHealthAgent(obj))
 
+                            // Variables – CSVWTableGroup at dataset level
+                            HEALTHDCATAP.hasVariables -> {
+                                val vars = extractVariablesFromTableGroup(obj.asResource())
+                                if (vars.size() > 0) {
+                                    withJsonArray("variables").addAll(vars)
+                                }
+                            }
+
                             else -> {
                                 log.debug(
                                     "Unknown predicate for HEALTHDCATAP namespace: {}",
@@ -185,44 +193,6 @@ fun indexHealthDcatAp(
                         log.error("Error when handling the predicate: $predicate", e)
                     }
                 }
-
-                if (predicate.nameSpace == ADMS.NS) {
-                    try {
-                        when (predicate) {
-                            ADMS.sample -> {
-                                // We’ve found an adms:sample triple → the object is a dcat:Distribution
-                                val distRes = obj.asResource()
-                                // Get the distribution piveau id (last part of the uri)
-                                // (we need it in order to match with the corresponding distributions_sample json object)
-                                val distId = distRes.uri.substringAfterLast('/')
-                                // Pull out all the CSVW-based column info for that distribution
-                                val vars = extractVariablesFromAdmsSampleDistribution(distRes)
-
-                                // Now we need to find the matching JSON object in our "sample_distributions" array
-                                // by matching the "id" field with the distUri id part.
-                                this.getJsonArray("distributions_sample")?.let { sdArray ->
-                                    // Iterate by index so we can break out once we’ve found the right one
-                                    for (i in 0 until sdArray.size()) {
-                                        // Fetch the i-th element as a JsonObject
-                                        val sd = sdArray.getJsonObject(i)
-                                        // Compare its "id" field against our distribution URI id
-                                        if (sd.getString("id") == distId) {
-                                            //If we actually found any column info, attach it
-                                            if (vars.size() > 0) {
-                                               sd.put("variables", vars)
-                                            }
-                                            // We’ve enriched the correct JSON entry—no need to keep looping
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        log.error("Error when handling ADMS predicate: $predicate", e)
-                    }
-                }
-
 
                 if (predicate.nameSpace == GEODCATAP.NS) {  // Check the namespace of the predicate
                     try {
@@ -454,51 +424,38 @@ fun indexingLandingPageHealthData(node: RDFNode): JsonObject = when (node) {
 }
 
 /**
- *  Helper that, given a dcat:Distribution Resource referenced by adms:sample,
- *  extracts all its CSVW column definitions and returns them as a Vert.x JsonArray.
+ * Helper that, given a CSVW TableGroup Resource (the object of healthdcatap:hasVariables),
+ * extracts all its CSVW column definitions and returns them as a Vert.x JsonArray.
  *
- * @param dist The ADMS Sample Distribution resource.
- * @return A JsonArray containing the extracted variables.
+ * @param tg The CSVWTableGroup resource pointed to by healthdcatap:hasVariables.
+ * @return A JsonArray containing the extracted column/variable definitions.
  */
-fun extractVariablesFromAdmsSampleDistribution(dist: Resource): JsonArray {
+fun extractVariablesFromTableGroup(tg: Resource): JsonArray {
     // Define the CSVW namespace and the properties we care about
     val csvwNS   = "http://www.w3.org/ns/csvw#"
-    val pTABLE  = ResourceFactory.createProperty(csvwNS, "table")
-    val pCOLUMN = ResourceFactory.createProperty(csvwNS, "column")
-    val pNAME   = ResourceFactory.createProperty(csvwNS, "name")
-    val pTITLES = ResourceFactory.createProperty(csvwNS, "titles")
-    val pDTYPE  = ResourceFactory.createProperty(csvwNS, "datatype")
+    val pTABLE   = ResourceFactory.createProperty(csvwNS, "table")
+    val pCOLUMN  = ResourceFactory.createProperty(csvwNS, "column")
+    val pNAME    = ResourceFactory.createProperty(csvwNS, "name")
+    val pTITLES  = ResourceFactory.createProperty(csvwNS, "titles")
+    val pDTYPE   = ResourceFactory.createProperty(csvwNS, "datatype")
     val pPROPURL = ResourceFactory.createProperty(csvwNS, "propertyUrl")
 
-    // Prepare a JsonArray to collect each column’s JSON
     val vars = JsonArray()
 
-    // Find the RDF node that represents the CSVW TableGroup.
-    // It lives at the URI declared in dcat:downloadURL or dcat:accessURL.
-    val tg = listOf(
-        DCAT.downloadURL,
-        DCAT.accessURL
-    ).firstNotNullOfOrNull { dist.getProperty(it)?.`object`?.asResource() }
-
-    //If we found that TableGroup resource, iterate its csvw:table children
-    tg?.listProperties(pTABLE)?.forEachRemaining { tblStmt ->
+    // Iterate the csvw:table children of the TableGroup
+    tg.listProperties(pTABLE)?.forEachRemaining { tblStmt ->
         val tbl = tblStmt.`object`.asResource()
 
         // For each csvw:table, iterate its csvw:column children
         tbl.listProperties(pCOLUMN).forEachRemaining { colStmt ->
             val c = colStmt.`object`.asResource()
 
-            // multilingual helper for titles & description
-            // we use indexingMultiLang2 helper to get a (lang, text) pair
-            // and then put that text under the correct language code
             val titlesJson = indexingMultiLang2(c, pTITLES, "en")
             val descJson   = indexingMultiLang2(c, DCTerms.description, "en")
 
-            // Pull out the simple name & datatype literals (or empty string if missing)
             val name  = c.getProperty(pNAME)?.`object`?.asLiteral()?.string.orEmpty()
             val dtype = c.getProperty(pDTYPE)?.`object`?.asLiteral()?.string.orEmpty()
 
-            // normalize csvw:propertyUrl to a string (URI or literal)
             val propertyUrl = c.getProperty(pPROPURL)?.`object`?.let { node ->
                 when {
                     node.isResource -> node.asResource().uri
@@ -517,7 +474,6 @@ fun extractVariablesFromAdmsSampleDistribution(dist: Resource): JsonArray {
             )
         }
     }
-    // Return the completed array of column definitions
     return vars
 }
 

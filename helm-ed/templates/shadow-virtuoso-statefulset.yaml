@@ -19,10 +19,15 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "piveau-hub-repo.shadowVirtuosoName" . }}
+  name: {{ include "piveau-hub-repo.shadowVirtuosoName" . }}-t
   labels:
     {{- include "piveau-hub-repo.shadowVirtuosoLabels" . | nindent 4 }}
 spec:
+  updateStrategy:
+    type: {{ if .Values.shadowVirtuoso.strategy }}{{ .Values.shadowVirtuoso.strategy }}{{ else }}RollingUpdate{{ end }}
+    {{- if and .Values.shadowVirtuoso.strategy (ne .Values.shadowVirtuoso.strategy "RollingUpdate") }}
+    rollingUpdate: null
+    {{- end }}
   selector:
     matchLabels:
       {{- include "piveau-hub-repo.shadowVirtuosoSelectorLabels" . | nindent 6 }}
@@ -39,33 +44,47 @@ spec:
           image: "{{ .Values.shadowVirtuoso.image.repository }}:{{ .Values.shadowVirtuoso.image.tag }}"
           imagePullPolicy: {{ .Values.shadowVirtuoso.imagePullPolicy }}
           ports:
-            - containerPort: {{ .Values.shadowVirtuoso.service.port.default }}
+            - containerPort: {{ .Values.shadowVirtuoso.containerPort.default }}
               name: default
               protocol: TCP
-            - containerPort: {{ .Values.shadowVirtuoso.service.port.service }}
+            - containerPort: {{ .Values.shadowVirtuoso.containerPort.service }}
               name: service
               protocol: TCP
           {{- if .Values.shadowVirtuoso.resources }}
-          resources: {{ toYaml .Values.shadowVirtuoso.resources | nindent 12 }}
+          resources:
+            {{- toYaml .Values.shadowVirtuoso.resources | nindent 12 }}
           {{- end }}
+          startupProbe:
+            {{- toYaml .Values.shadowVirtuoso.startupProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.shadowVirtuoso.readinessProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.shadowVirtuoso.livenessProbe | nindent 12 }}
           # This env section allows us to set environment variables to the value of a key from a Kubernetes secret or a value from the values file
           env:
           # Conditional block - If the deployment is to take place in an AWS environment
           {{- if .Values.aws.enabled }}
-            - name: DBA_PASSWORD
+          {{- $rootChart := . }}
+          {{- range $envName, $secretKey := .Values.shadowVirtuoso.envSecretsMap }}
+            - name: {{ $envName }}
               valueFrom:
                 secretKeyRef:
-                  key: shadow_dba_password
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+                  key: {{ $secretKey }}
+                  name: {{ include "piveau-hub-repo.name" $rootChart }}-secrets
+          {{- end }}
           # Conditional block - If the deployment is to take place in a non-AWS environment
           {{- else }}
-            - name: DBA_PASSWORD
-              value: {{ .Values.shadowVirtuoso.dbaPassword }}
+            {{- with .Values.shadowVirtuoso.env }}
+            {{- range . }}
+              - name: {{ .name }}
+                value: {{ tpl .value $ | quote }}
+            {{- end }}
+            {{- end }}
           {{- end }}
           # This volumeMounts section mounts the shadow-virtuoso-data volume to the container under the /database directory or mounts the secret-volume to the container under the /etc/piveau-hub-repo-secrets directory
           volumeMounts:
-            - mountPath: /data
-              name: shadow-virtuoso
+            - mountPath: /database
+              name: data
           # Conditional block - If the deployment is to take place in an AWS environment
           {{- if .Values.aws.enabled }}
             - name: {{ include "piveau-hub-repo.name" . }}-secrets
@@ -86,7 +105,7 @@ spec:
   # This volumes section defines the shadow-virtuoso-data volume as a persistent volume claim
   volumeClaimTemplates:
     - metadata:
-        name: shadow-virtuoso
+        name: data
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

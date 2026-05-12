@@ -17,10 +17,10 @@ package io.piveau.openapi
 
 import io.piveau.RDFMimeTypesEnum
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
 import io.piveau.rdf.asString
+import io.piveau.rdf.presentAs
 import io.piveau.test.MockTripleStore
 import io.piveau.utils.dcatap.dsl.catalogue
 import io.piveau.utils.dcatap.dsl.dataset
@@ -35,7 +35,6 @@ import io.vertx.junit5.VertxExtension
 import io.vertx.junit5.VertxTestContext
 import org.apache.jena.riot.Lang
 import org.apache.jena.vocabulary.DCAT
-import org.apache.jena.vocabulary.DCTerms
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.extension.ExtendWith
@@ -57,6 +56,10 @@ class DatasetsLegacyAPITest {
     private val apikey = "test-api-key"
 
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/datasets"
+    private val recordsServiceAddress get() = "$baseUrl/records"
 
     private val testCatalogue = catalogue("test-catalogue") {
         title { "Test catalogue" lang "en" }
@@ -75,6 +78,9 @@ class DatasetsLegacyAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(
@@ -82,16 +88,28 @@ class DatasetsLegacyAPITest {
                     .put(apikey, JsonArray().add("*"))
                     .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue"))
             )
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue.uri, testCatalogue.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue.id}")
+                    .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue.model.presentAs(Lang.NTRIPLES)))
+            }
             .onSuccess {
-                client = WebClient.create(vertx)
-                testContext.completeNow()
+                if (it.statusCode() == 201 || it.statusCode() == 204) {
+                    client = WebClient.create(vertx)
+                    testContext.completeNow()
+                } else {
+                    testContext.failNow("Failed to create test catalogue: ${it.statusCode()} ${it.statusMessage()} ${it.bodyAsString()}")
+                }
             }
             .onFailure(testContext::failNow)
     }
@@ -284,7 +302,7 @@ class DatasetsLegacyAPITest {
     )
     @Order(9)
     fun `Test head list datasets legacy`(sourceIds: Boolean, vertx: Vertx, testContext: VertxTestContext) {
-        client.headAbs(DatasetsAPITest.serviceAddress)
+        client.headAbs(serviceAddress)
             .addQueryParam("catalogue", testCatalogue.id)
             .addQueryParam("sourceIds", sourceIds.toString())
             .send()
@@ -731,9 +749,17 @@ class DatasetsLegacyAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val recordsServiceAddress = "http://localhost:8080/records"
-        const val serviceAddress = "http://localhost:8080/datasets"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
 
 }

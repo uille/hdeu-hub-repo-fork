@@ -48,10 +48,16 @@ class VocabulariesAPITest {
 
     private lateinit var client: WebClient
     private val apikey = "test-api-key"
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/vocabularies"
 
     @BeforeAll
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
+
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
 
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
@@ -60,12 +66,29 @@ class VocabulariesAPITest {
                     .put(apikey, JsonArray().add("*"))
                     .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue"))
             )
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
             .deploy(vertx)
             .compose { vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config)) }
-            .onSuccess { testContext.completeNow() }
+            .onSuccess { id ->
+                deploymentId = id
+                testContext.completeNow()
+            }
             .onFailure(testContext::failNow)
+    }
+
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
 
     @ParameterizedTest
@@ -180,8 +203,5 @@ class VocabulariesAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/vocabularies"
-    }
 
 }

@@ -400,9 +400,9 @@ class TranslationServiceUtilsTest {
 
   @Test
   @DisplayName(
-      "Build translation request extracts CSVW column titles/description for ADMS.sample (fixture-based)"
+      "Build translation request extracts CSVW column titles/description for healthdcatap:hasVariables (fixture-based)"
   )
-  void buildTranslationRequest_includesCsvwColumnsForSample(VertxTestContext testContext) {
+  void buildTranslationRequest_includesCsvwColumnsForHasVariables(VertxTestContext testContext) {
     testContext.verify(() -> {
       Resource dataset = datasetHelper.resource();
       String datasetUri = dataset.getURI();
@@ -411,7 +411,7 @@ class TranslationServiceUtilsTest {
       JsonObject dict = req.getJsonObject("dict");
       assertNotNull(dict);
 
-      // Expect at least one dict key for a skolemized CSVW column
+      // Expect at least one dict key for a skolemized CSVW column (from healthdcatap:hasVariables)
       boolean hasCsvwColumnKey = dict
           .getMap()
           .keySet()
@@ -437,6 +437,76 @@ class TranslationServiceUtilsTest {
           hasTitlesOrDesc,
           "Expected CSVW titles and/or DCTerms.description in column entry"
       );
+
+      testContext.completeNow();
+    });
+  }
+
+  @Test
+  @DisplayName("buildLanguageTag produces correct BCP-47 MT@EC tag")
+  void buildLanguageTag_formatsCorrectly(VertxTestContext testContext) {
+    testContext.verify(() -> {
+      // fr translated from en => "fr-t-en-t0-mtec"
+      assertEquals("fr-t-en-t0-mtec", TranslationServiceUtils.buildLanguageTag("en", "fr"));
+      // de translated from el => "de-t-el-t0-mtec"
+      assertEquals("de-t-el-t0-mtec", TranslationServiceUtils.buildLanguageTag("el", "de"));
+      testContext.completeNow();
+    });
+  }
+
+  @Test
+  @DisplayName("applyTranslations silently skips entries whose key cannot be resolved")
+  void applyTranslations_unresolvableKey_isSkipped(VertxTestContext testContext) {
+    testContext.verify(() -> {
+      Model model = datasetHelper.model();
+      // A key that does not match any resource in the model and is not a known pattern
+      JsonObject dict = new JsonObject()
+          .put(
+              "https://does-not-exist.example/no-such-resource",
+              new JsonObject().put(
+                  DCTerms.title.getURI(),
+                  new JsonObject()
+                      .put("sourceLanguage", "en")
+                      .put("translations", new JsonObject().put("de", "SHOULD_NOT_APPEAR"))
+              )
+          );
+
+      // Must not throw
+      TranslationServiceUtils.applyTranslations(model, dict);
+
+      // No German machine-translated title should have been added to any resource
+      boolean anyMatch = model.listStatements()
+          .toList()
+          .stream()
+          .anyMatch(st -> st.getObject().isLiteral()
+              && "SHOULD_NOT_APPEAR".equals(st.getLiteral().getString()));
+      assertFalse(anyMatch, "Unresolvable key should result in no translation being applied");
+
+      testContext.completeNow();
+    });
+  }
+
+  @Test
+  @DisplayName("propertyToLanguageMap ignores machine-translated literals ending in -t0-mtec")
+  void propertyToLanguageMap_excludesMachineTranslatedLiterals(VertxTestContext testContext) {
+    testContext.verify(() -> {
+      Model model = datasetHelper.model();
+      Resource dataset = datasetHelper.resource();
+
+      // Add a machine-translated literal
+      dataset.addProperty(DCTerms.title, model.createLiteral("Maschinell übersetzt", "de-t-en-t0-mtec"));
+      // Add a human-authored literal
+      dataset.addProperty(DCTerms.title, model.createLiteral("Human Title", "en"));
+
+      Map<String, String> langs = TranslationServiceUtils.propertyToLanguageMap(
+          dataset, DCTerms.title, "en");
+
+      // The machine-translated literal must be excluded
+      assertFalse(
+          langs.keySet().stream().anyMatch(k -> k.endsWith("-t0-mtec")),
+          "MT@EC tagged literals should be excluded from the language map"
+      );
+      assertTrue(langs.containsKey("en"), "Human-authored 'en' literal should be present");
 
       testContext.completeNow();
     });

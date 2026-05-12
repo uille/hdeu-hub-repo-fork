@@ -170,6 +170,9 @@ public class TranslationServiceUtils {
     // Dataset sample distributions
     processDistributions(helper.resource(), oldResource, ADMS.sample, dict, defaultLanguage);
 
+    // Dataset variables – CSVWTableGroup at dataset level via healthdcatap:hasVariables
+    processCsvwColumnsForHasVariables(helper.resource(), oldResource, dict, defaultLanguage);
+
     // Dataset purpose (blank nodes are common -> skolemize + snapshot iteration)
     List<Statement> purposeStmts = helper.resource().listProperties(DPV.hasPurpose).toList();
     for (Statement statement : purposeStmts) {
@@ -412,21 +415,21 @@ public class TranslationServiceUtils {
         // newResource has a URI after ensureSkolem(...)
         dict.put(newResource.getURI(), entry);
       }
-
-      // If this is an ADMS.sample distribution, also translate CSVW column titles/descriptions
-      if (property.equals(ADMS.sample)) {
-        processCsvwColumnsForSample(dataset, newResource, oldResource, dict, defaultLanguage);
-      }
     }
   }
 
   /**
-   * Extracts CSVW table/column titles and descriptions from sample distributions.
+   * Extracts CSVW table/column titles and descriptions from the dataset-level
+   * {@code healthdcatap:hasVariables} property (CSVWTableGroup_Shape).
+   *
+   * <p>Variables have been moved from {@code adms:sample} distributions to the dataset level.
+   * Each object of {@code healthdcatap:hasVariables} is a CSVW TableGroup whose
+   * {@code csvw:table} children contain {@code csvw:column} children with translatable
+   * {@code csvw:titles} and {@code dct:description} literals.
    */
-  private static void processCsvwColumnsForSample(
+  private static void processCsvwColumnsForHasVariables(
       Resource dataset,
-      Resource newDistribution,
-      Resource oldDistribution,
+      Resource oldDataset,
       JsonObject dict,
       String defaultLanguage) {
 
@@ -435,21 +438,21 @@ public class TranslationServiceUtils {
     }
     final String datasetUri = dataset.getURI();
 
-    // SNAPSHOT: downloadURL statements
-    List<Statement> downloadStmts = newDistribution.listProperties(DCAT.downloadURL).toList();
-    for (Statement downloadStmt : downloadStmts) {
-      if (!downloadStmt.getObject().isResource()) {
+    // SNAPSHOT: healthdcatap:hasVariables statements
+    List<Statement> tableGroupStmts = dataset.listProperties(HEALTHDCATAP.hasVariables).toList();
+    for (Statement tgStmt : tableGroupStmts) {
+      if (!tgStmt.getObject().isResource()) {
         continue;
       }
 
       // Skolemize the CSVW TableGroup to a deterministic URI before matching
-      Resource newTableGroup = ensureSkolem(downloadStmt.getResource(), datasetUri, "csvw-tablegroup");
+      Resource newTableGroup = ensureSkolem(tgStmt.getResource(), datasetUri, "csvw-tablegroup");
 
-      // oldTableGroup only resolvable via URI
+      // oldTableGroup only resolvable via URI from oldDataset
       Resource oldTableGroup = null;
-      if (oldDistribution != null && newTableGroup.isURIResource() && newTableGroup.getURI() != null) {
-        Resource candidate = oldDistribution.getModel().getResource(newTableGroup.getURI());
-        if (oldDistribution.getModel().containsResource(candidate)) {
+      if (oldDataset != null && newTableGroup.isURIResource() && newTableGroup.getURI() != null) {
+        Resource candidate = oldDataset.getModel().getResource(newTableGroup.getURI());
+        if (oldDataset.getModel().containsResource(candidate)) {
           oldTableGroup = candidate;
         }
       }
@@ -470,11 +473,6 @@ public class TranslationServiceUtils {
           if (oldTableGroup.getModel().containsResource(candidate)) {
             oldTable = candidate;
           }
-        } else if (oldDistribution != null && newTable.isURIResource() && newTable.getURI() != null) {
-          Resource candidate = oldDistribution.getModel().getResource(newTable.getURI());
-          if (oldDistribution.getModel().containsResource(candidate)) {
-            oldTable = candidate;
-          }
         }
 
         // SNAPSHOT: csvw:column statements
@@ -484,18 +482,13 @@ public class TranslationServiceUtils {
             continue;
           }
 
-          // Skolemize Column (may be bnode) -> should become URI resource
+          // Skolemize Column (may be bnode) -> guaranteed URI resource
           Resource newColumn = ensureSkolemCsvwColumn(colStmt.getResource(), datasetUri, newTable);
 
           Resource oldColumn = null;
           if (oldTable != null && newColumn.isURIResource() && newColumn.getURI() != null) {
             Resource candidate = oldTable.getModel().getResource(newColumn.getURI());
             if (oldTable.getModel().containsResource(candidate)) {
-              oldColumn = candidate;
-            }
-          } else if (oldDistribution != null && newColumn.isURIResource() && newColumn.getURI() != null) {
-            Resource candidate = oldDistribution.getModel().getResource(newColumn.getURI());
-            if (oldDistribution.getModel().containsResource(candidate)) {
               oldColumn = candidate;
             }
           }
@@ -513,7 +506,6 @@ public class TranslationServiceUtils {
           }
 
           if (!columnEntry.isEmpty()) {
-            // ensureSkolem should guarantee URI, but keep it safe
             String key = (newColumn.isURIResource() && newColumn.getURI() != null)
                 ? newColumn.getURI()
                 : datasetUri + "#skolem-csvw-column-fallback-" + newColumn.getId().getLabelString();

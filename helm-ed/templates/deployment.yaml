@@ -23,6 +23,15 @@ metadata:
   labels:
     {{- include "piveau-hub-repo.labels" . | nindent 4 }}
 spec:
+  strategy:
+  {{- if .Values.deploymentStrategy }}
+  {{ toYaml .Values.deploymentStrategy | nindent 4 }}
+  {{- else }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  {{- end }}
   {{- if not .Values.autoscaling.enabled }}
   # The number of replicas (pods) to run, defined in the values file, if autoscaling is not enabled
   replicas: {{ .Values.replicaCount }}
@@ -68,20 +77,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 180
-            timeoutSeconds: 10
-            periodSeconds: 10
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 180
-            timeoutSeconds: 10
-            periodSeconds: 10
-            failureThreshold: 10 
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
         # envFrom allows you to expose all the ConfigMap keys as environment variables
           envFrom:
             - configMapRef:
@@ -112,7 +112,7 @@ spec:
           # This env section allows us to set environment variables to the value of a key from a Kubernetes secret
           env:
           {{- $rootChart := . }}
-          {{- range $envName, $secretKey := .Values.aws.envSecretsMap }}
+          {{- range $envName, $secretKey := .Values.envSecretsMap }}
             - name: {{ $envName }}
               valueFrom:
                 secretKeyRef:

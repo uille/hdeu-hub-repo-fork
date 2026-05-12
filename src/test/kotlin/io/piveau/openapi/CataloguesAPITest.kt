@@ -54,6 +54,9 @@ class CataloguesAPITest {
     private val log: Logger = LoggerFactory.getLogger(javaClass)
     private val apikey = "test-api-key"
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/catalogues"
 
     private val testCatalogue = catalogue("test-catalogue") {
         title { "Test catalogue" lang "en" }
@@ -67,18 +70,24 @@ class CataloguesAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(Constants.ENV_PIVEAU_HUB_API_KEYS, JsonObject()
                 .put(apikey, JsonArray().add("*"))
                 .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue")))
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
-            .onSuccess {
+            .onSuccess { id ->
+                deploymentId = id
                 testContext.completeNow()
             }
             .onFailure(testContext::failNow)
@@ -304,8 +313,16 @@ class CataloguesAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/catalogues"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
 
 }

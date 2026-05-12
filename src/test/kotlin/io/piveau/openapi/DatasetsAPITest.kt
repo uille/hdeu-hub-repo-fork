@@ -17,7 +17,6 @@ package io.piveau.openapi
 
 import io.piveau.RDFMimeTypesEnum
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
 import io.piveau.rdf.asString
@@ -57,6 +56,8 @@ class DatasetsAPITest {
     private val apikey = "test-api-key"
 
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
 
     private val testCatalogue = catalogue("test-catalogue") {
         title { "Test catalogue" lang "en" }
@@ -75,6 +76,9 @@ class DatasetsAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(
@@ -82,23 +86,41 @@ class DatasetsAPITest {
                     .put(apikey, JsonArray().add("*"))
                     .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue"))
             )
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue.uri, testCatalogue.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
-            .compose {
-                client.putAbs("http://localhost:8080/catalogues/${testCatalogue.id}/datasets/origin")
-                    .addQueryParam("originalId", testDataset.id)
-                    .putHeader("X-API-Key", apikey)
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue.id}")
                     .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
-                    .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue.model.presentAs(Lang.NTRIPLES)))
             }
-            .onSuccess {
-                client = WebClient.create(vertx)
-                testContext.completeNow()
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    // Use legacy PUT /datasets/{id}?catalogue= (putDatasetOrigin - upsert) so that
+                    // testDataset.id is registered as the piveau ID for subsequent test calls
+                    client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                        .addQueryParam("catalogue", testCatalogue.id)
+                        .putHeader("X-API-Key", apikey)
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to create test catalogue: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
+            .onSuccess { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    client = WebClient.create(vertx)
+                    testContext.completeNow()
+                } else {
+                    testContext.failNow("Failed to create test dataset: ${resp.statusCode()} ${resp.statusMessage()} ${resp.bodyAsString()}")
+                }
             }
             .onFailure(testContext::failNow)
     }
@@ -113,7 +135,7 @@ class DatasetsAPITest {
     )
     @Order(1)
     fun `Test list datasets with value types`(valueType: String, vertx: Vertx, testContext: VertxTestContext) {
-        client.getAbs(serviceAddress)
+        client.getAbs("$baseUrl/datasets")
             .addQueryParam("valueType", valueType)
             .send()
             .onSuccess {
@@ -139,7 +161,7 @@ class DatasetsAPITest {
     )
     @Order(2)
     fun `Test head list datasets with value types`(valueType: String, vertx: Vertx, testContext: VertxTestContext) {
-        client.headAbs(serviceAddress)
+        client.headAbs("$baseUrl/datasets")
             .addQueryParam("valueType", valueType)
             .send()
             .onSuccess {
@@ -166,7 +188,7 @@ class DatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.getAbs(serviceAddress)
+        val request = client.getAbs("$baseUrl/datasets")
             .addQueryParam("valueType", "metadata")
 
         accept?.let { request.putHeader(HttpHeaders.ACCEPT.toString(), it.value) }
@@ -197,7 +219,7 @@ class DatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.getAbs(serviceAddress)
+        val request = client.getAbs("$baseUrl/datasets")
             .addQueryParam("valueType", "metadata")
             .addQueryParam("hydra", "true")
 
@@ -229,7 +251,7 @@ class DatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.headAbs(serviceAddress)
+        val request = client.headAbs("$baseUrl/datasets")
             .addQueryParam("valueType", "metadata")
 
         accept?.let { request.putHeader(HttpHeaders.ACCEPT.toString(), it.value) }
@@ -257,7 +279,7 @@ class DatasetsAPITest {
     @Order(6)
     fun `Test put dataset`(apiKey: String, statusCode: String, vertx: Vertx, testContext: VertxTestContext) {
         testDataset.addLiteral(DCAT.keyword, "keyword")
-        client.putAbs("$serviceAddress/${testDataset.id}")
+        client.putAbs("$baseUrl/datasets/${testDataset.id}")
             .putHeader("X-API-Key", apiKey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .sendBuffer(Buffer.buffer(testDataset.model.asString(Lang.NTRIPLES)))
@@ -270,7 +292,6 @@ class DatasetsAPITest {
                             assertEquals("Unauthorized", it.statusMessage())
                             assertEquals("Bearer", it.getHeader("WWW-Authenticate"))
                         }
-
                         403 -> assertEquals("Forbidden", it.statusMessage())
                     }
                 }
@@ -283,7 +304,7 @@ class DatasetsAPITest {
     @Order(7)
     fun `Test put dataset response 404`(vertx: Vertx, testContext: VertxTestContext) {
         testDataset.addLiteral(DCAT.keyword, "keyword2")
-        client.putAbs("$serviceAddress/failure-dataset")
+        client.putAbs("$baseUrl/datasets/failure-dataset")
             .putHeader("X-API-Key", apikey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
@@ -301,7 +322,7 @@ class DatasetsAPITest {
     @Order(8)
     fun `Test put dataset response 400`(vertx: Vertx, testContext: VertxTestContext) {
         testDataset.addLiteral(DCAT.keyword, "keyword2")
-        client.putAbs("$serviceAddress/${testDataset.id}")
+        client.putAbs("$baseUrl/datasets/${testDataset.id}")
             .putHeader("X-API-Key", apikey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .send()
@@ -328,7 +349,7 @@ class DatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.getAbs("$serviceAddress/${testDataset.id}")
+        val request = client.getAbs("$baseUrl/datasets/${testDataset.id}")
 
         accept?.let { request.putHeader(HttpHeaders.ACCEPT.toString(), it.value) }
 
@@ -350,7 +371,7 @@ class DatasetsAPITest {
         vertx: Vertx,
         testContext: VertxTestContext
     ) {
-        client.getAbs("$serviceAddress/failure-dataset")
+        client.getAbs("$baseUrl/datasets/failure-dataset")
             .putHeader(HttpHeaders.ACCEPT.toString(), RDFMimeTypes.NTRIPLES)
             .send()
             .onSuccess {
@@ -375,7 +396,7 @@ class DatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.headAbs("$serviceAddress/${testDataset.id}")
+        val request = client.headAbs("$baseUrl/datasets/${testDataset.id}")
 
         accept?.let { request.putHeader(HttpHeaders.ACCEPT.toString(), it.value) }
 
@@ -398,7 +419,7 @@ class DatasetsAPITest {
         vertx: Vertx,
         testContext: VertxTestContext
     ) {
-        client.headAbs("$serviceAddress/failure-dataset")
+        client.headAbs("$baseUrl/datasets/failure-dataset")
             .putHeader(HttpHeaders.ACCEPT.toString(), RDFMimeTypes.NTRIPLES)
             .send()
             .onSuccess {
@@ -419,7 +440,7 @@ class DatasetsAPITest {
     )
     @Order(13)
     fun `Test delete dataset`(apiKey: String, statusCode: String, vertx: Vertx, testContext: VertxTestContext) {
-        client.deleteAbs("$serviceAddress/${testDataset.id}")
+        client.deleteAbs("$baseUrl/datasets/${testDataset.id}")
             .putHeader("X-API-Key", apiKey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .send()
@@ -432,7 +453,6 @@ class DatasetsAPITest {
                             assertEquals("Unauthorized", it.statusMessage())
                             assertEquals("Bearer", it.getHeader("WWW-Authenticate"))
                         }
-
                         403 -> assertEquals("Forbidden", it.statusMessage())
                     }
                 }
@@ -443,7 +463,7 @@ class DatasetsAPITest {
 
     @Test
     fun `Test delete dataset 404 response`(vertx: Vertx, testContext: VertxTestContext) {
-        client.deleteAbs("$serviceAddress/failed-distribution")
+        client.deleteAbs("$baseUrl/datasets/failed-distribution")
             .putHeader("X-API-Key", apikey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .send()
@@ -457,8 +477,18 @@ class DatasetsAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/datasets"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
+    companion object
 
 }

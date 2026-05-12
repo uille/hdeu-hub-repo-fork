@@ -54,13 +54,14 @@
     adms:sample [
         a dcat:Distribution ;
         dct:title "Sample title"@en ;
-        dct:description "Sample desc"@en ;
-        dcat:downloadURL [
-            csvw:table [
-                csvw:column [
-                    csvw:titles "Age"@en ;
-                    dct:description "Age of patient"@en
-                ]
+        dct:description "Sample desc"@en
+    ] ;
+
+    healthdcatap:hasVariables [
+        csvw:table [
+            csvw:column [
+                csvw:titles "Age"@en ;
+                dct:description "Age of patient"@en
             ]
         ]
     ] .

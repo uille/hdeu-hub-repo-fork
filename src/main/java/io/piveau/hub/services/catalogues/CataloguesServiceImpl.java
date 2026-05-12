@@ -36,6 +36,9 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.serviceproxy.ServiceException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.rdf.model.Statement;
@@ -44,10 +47,6 @@ import org.apache.jena.riot.RiotException;
 import org.apache.jena.vocabulary.DCAT;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Function;
 
 public class CataloguesServiceImpl implements CataloguesService {
 
@@ -119,8 +118,8 @@ public class CataloguesServiceImpl implements CataloguesService {
             logger.error("Error parsing catalogue", e);
             return Future.failedFuture(new ServiceException(400, "Could not decode body with Content-Type " + contentType + ": " + e.getMessage()));
         } catch (IllegalArgumentException e) {
-          logger.error("Validation error in catalogue RDF", e);
-          return Future.failedFuture(new ServiceException(400, "Validation error: " + e.getMessage()));
+            logger.error("Validation error in catalogue RDF", e);
+            return Future.failedFuture(new ServiceException(400, "Validation error: " + e.getMessage()));
         }
 
         Model datasetsList = ModelFactory.createDefaultModel();

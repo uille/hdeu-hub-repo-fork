@@ -17,10 +17,10 @@ package io.piveau.openapi
 
 import io.piveau.RDFMimeTypesEnum
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
 import io.piveau.rdf.asString
+import io.piveau.rdf.presentAs
 import io.piveau.test.MockTripleStore
 import io.piveau.utils.dcatap.dsl.catalogue
 import io.piveau.utils.dcatap.dsl.dataset
@@ -58,6 +58,9 @@ class DistributionsAPITest {
     private val log: Logger = LoggerFactory.getLogger(javaClass)
     private val apikey = "test-api-key"
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/distributions"
 
     private var identifiers: List<String> = listOf()
 
@@ -83,6 +86,9 @@ class DistributionsAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(
@@ -90,27 +96,41 @@ class DistributionsAPITest {
                     .put(apikey, JsonArray().add("*"))
                     .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue"))
             )
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue.uri, testCatalogue.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
-            .compose {
-                client.putAbs("http://localhost:8080/catalogues/${testCatalogue.id}/datasets/origin")
-                    .addQueryParam("originalId", testDataset.id)
-                    .putHeader("X-API-Key", apikey)
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue.id}")
                     .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
-                    .sendBuffer(Buffer.buffer(testDataset.model.asString(Lang.NTRIPLES)))
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue.model.presentAs(Lang.NTRIPLES)))
             }
-            .compose {
-                when (it.statusCode()) {
-                    201 -> client.getAbs("http://localhost:8080/datasets/${testDataset.id}/distributions")
-                        .addQueryParam("valueType", "identifiers")
-                        .send()
-
-                    else -> Future.failedFuture(it.statusMessage())
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    // Use legacy PUT /datasets/{id}?catalogue= (putDatasetOrigin - upsert) so that
+                    // testDataset.id is registered as the piveau ID for subsequent test calls
+                    client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                        .addQueryParam("catalogue", testCatalogue.id)
+                        .putHeader("X-API-Key", apikey)
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .sendBuffer(Buffer.buffer(testDataset.model.asString(Lang.NTRIPLES)))
+                } else {
+                    Future.failedFuture("Failed to create test catalogue: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
+            .compose { resp ->
+                when {
+                    resp.statusCode() == 201 || resp.statusCode() == 204 ->
+                        client.getAbs("$baseUrl/datasets/${testDataset.id}/distributions")
+                            .addQueryParam("valueType", "identifiers")
+                            .send()
+                    else -> Future.failedFuture("Failed to create test dataset: ${resp.statusCode()} ${resp.bodyAsString()}")
                 }
             }
             .onSuccess {
@@ -284,8 +304,17 @@ class DistributionsAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/distributions"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
 
 }

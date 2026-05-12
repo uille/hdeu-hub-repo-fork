@@ -16,7 +16,6 @@
 package io.piveau.openapi
 
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
 import io.piveau.rdf.presentAs
@@ -57,6 +56,9 @@ class DatasetMetricsAPITest {
     private val log: Logger = LoggerFactory.getLogger(javaClass)
 
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/datasets"
 
     private val testCatalogue = catalogue("test-catalogue") {
         title { "Test catalogue" lang "en" }
@@ -77,27 +79,48 @@ class DatasetMetricsAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(Constants.ENV_PIVEAU_HUB_API_KEYS, JsonObject()
                 .put(apikey, JsonArray().add("*"))
                 .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue")))
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue.uri, testCatalogue.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
-            .compose {
-                client.putAbs("http://localhost:8080/catalogues/${testCatalogue.id}/datasets/origin")
-                    .addQueryParam("originalId", testDataset.id)
-                    .putHeader("X-API-Key", apikey)
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue.id}")
                     .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
-                    .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue.model.presentAs(Lang.NTRIPLES)))
+            }
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    // Use legacy PUT /datasets/{id}?catalogue= (putDatasetOrigin - upsert) so that
+                    // testDataset.id is registered as the piveau ID for subsequent test calls
+                    client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                        .addQueryParam("catalogue", testCatalogue.id)
+                        .putHeader("X-API-Key", apikey)
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to create test catalogue: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
             }
             .onSuccess {
-                testContext.completeNow()
+                if (it.statusCode() == 201 || it.statusCode() == 204) {
+                    testContext.completeNow()
+                } else {
+                    testContext.failNow("Failed to create test dataset: ${it.statusCode()} ${it.bodyAsString()}")
+                }
             }
             .onFailure(testContext::failNow)
     }
@@ -185,8 +208,17 @@ class DatasetMetricsAPITest {
         testContext.completeNow()
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/datasets"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
 
 }

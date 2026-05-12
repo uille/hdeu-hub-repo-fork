@@ -159,7 +159,13 @@ public class MainVerticle extends AbstractVerticle {
         }
         DCATAPUriSchema.setConfig(schemaConfig);
 
-        Integer port = config.getInteger(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, Defaults.SERVICE_PORT);
+        // In test mode (PIVEAU_HUB_TEST_MODE=true in deployment config), default to port 0 so the
+        // OS assigns a free ephemeral port – eliminates port collisions across concurrent test classes.
+        // In production this flag must not be set, so the production default (Defaults.SERVICE_PORT) is used.
+        boolean isTestMode = config().getBoolean(Constants.ENV_PIVEAU_HUB_TEST_MODE, false);
+        Integer port = config.getInteger(Constants.ENV_PIVEAU_HUB_SERVICE_PORT,
+                config().getInteger(Constants.ENV_PIVEAU_HUB_SERVICE_PORT,
+                        isTestMode ? 0 : Defaults.SERVICE_PORT));
 
         Map<String, List<String>> apiKeys = new HashMap<>();
         if (config.containsKey(Constants.ENV_PIVEAU_HUB_API_KEYS)) {
@@ -653,7 +659,7 @@ public class MainVerticle extends AbstractVerticle {
                             });
                 })
                 .onSuccess(server -> {
-                    log.info("Successfully launched server on port {}", port);
+                    log.info("Successfully launched server on port {}", server.actualPort());
                     promise.complete();
                 })
                 .onFailure(promise::fail);

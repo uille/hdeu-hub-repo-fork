@@ -16,6 +16,7 @@
 package io.piveau.indexing;
 
 import io.piveau.hub.indexing.indexingCatalogue
+import io.piveau.hub.util.IndexMappingLoader
 import io.piveau.vocabularies.initRemotes
 import io.piveau.vocabularies.readTurtleResource
 import io.vertx.core.Vertx
@@ -26,6 +27,8 @@ import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.rdf.model.Resource
 import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -40,7 +43,16 @@ class IndexingGeonamesTest {
         readTurtleResource("example_dataset_geonames.ttl")
     }
 
+    @BeforeAll
+    fun setUp(vertx: Vertx, testContext: VertxTestContext) {
+        IndexMappingLoader(vertx, JsonObject(), null)
+            .load()
+            .onSuccess { testContext.completeNow() }
+            .onFailure(testContext::failNow)
+    }
+
     @Test
+    @Disabled("Integration test: requires live geonames.org network access. Run manually or in an integration test profile.")
     fun `example indexing dataset for geonames`(vertx: Vertx, testContext: VertxTestContext) {
         initRemotes(vertx)
 

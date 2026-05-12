@@ -45,6 +45,12 @@ class ResourcesServiceVerticleTest {
     var cfg = new JsonObject()
         .put(ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig());
 
+    // Deploy MockTripleStore first so ResourcesService.create() can connect to it.
+    // Without this the verticle start hangs indefinitely waiting for a triplestore that isn't there.
+    CountDownLatch mockReady = new CountDownLatch(1);
+    new MockTripleStore().deploy(vertx).onComplete(ar -> mockReady.countDown());
+    assertTrue(mockReady.await(10, TimeUnit.SECONDS), "MockTripleStore did not start in time");
+
     // Deploy the verticle
     CountDownLatch deployed = new CountDownLatch(1);
     final String[] depId = new String[1];
@@ -58,8 +64,8 @@ class ResourcesServiceVerticleTest {
           deployed.countDown();
         }
     );
-    
-    assertTrue(deployed.await(5, TimeUnit.SECONDS), "Deployment did not complete");
+
+    assertTrue(deployed.await(10, TimeUnit.SECONDS), "Deployment did not complete");
     assertNotNull(depId[0], "Verticle deployment failed");
 
     var proxy = ResourcesService.createProxy(vertx, ResourcesService.SERVICE_ADDRESS);

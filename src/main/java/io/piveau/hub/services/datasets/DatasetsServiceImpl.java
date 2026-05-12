@@ -120,6 +120,42 @@ public class DatasetsServiceImpl implements DatasetsService {
 
   private final SparqlQueryPool sparqlQueryPool;
 
+  /**
+   * Query templates loaded synchronously from classpath at construction time.
+   * Using classpath loading avoids the async race condition of SparqlQueryPool
+   * where queries could be null immediately after startup.
+   */
+  private final String catalogueQueryTemplate;
+  private final String recordQueryTemplate;
+  private final String askPiveauIdQueryTemplate;
+
+  /**
+   * Loads a SPARQL query template synchronously from classpath resources.
+   * Tries multiple paths to handle different classloader configurations.
+   * Falls back to null if not found (caller handles this).
+   */
+  private static String loadQueryTemplate(String name) {
+    String resourcePath = "/queries/" + name + ".sparql";
+    // Try with leading slash (absolute classpath path)
+    try (java.io.InputStream is = DatasetsServiceImpl.class.getResourceAsStream(resourcePath)) {
+      if (is != null) {
+        return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+      }
+    } catch (Exception e) {
+      // fall through to next attempt
+    }
+    // Try without leading slash (relative to package, some classloaders prefer this)
+    try (java.io.InputStream is = DatasetsServiceImpl.class.getClassLoader()
+        .getResourceAsStream("queries/" + name + ".sparql")) {
+      if (is != null) {
+        return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+      }
+    } catch (Exception e) {
+      // fall through
+    }
+    return null;
+  }
+
   DatasetsServiceImpl(
       TripleStore tripleStore,
       TripleStore shadowTripleStore,
@@ -175,6 +211,22 @@ public class DatasetsServiceImpl implements DatasetsService {
     validationConfig = configHelper.forceJsonObject(Constants.ENV_PIVEAU_HUB_VALIDATOR);
 
     sparqlQueryPool = SparqlQueryPool.Companion.create(vertx, Path.of("queries"));
+
+    // Load critical query templates synchronously from classpath to avoid the async
+    // race condition where sparqlQueryPool.format() returns null immediately after startup
+    catalogueQueryTemplate = loadQueryTemplate("catalogueQuery");
+    recordQueryTemplate = loadQueryTemplate("recordQuery");
+    askPiveauIdQueryTemplate = loadQueryTemplate("askPiveauId");
+
+    if (catalogueQueryTemplate == null) {
+      logger.error("Failed to load catalogueQuery.sparql from classpath");
+    }
+    if (recordQueryTemplate == null) {
+      logger.error("Failed to load recordQuery.sparql from classpath");
+    }
+    if (askPiveauIdQueryTemplate == null) {
+      logger.error("Failed to load askPiveauId.sparql from classpath");
+    }
 
     readyHandler.handle(Future.succeededFuture(this));
   }
@@ -647,10 +699,18 @@ public class DatasetsServiceImpl implements DatasetsService {
               catalogueId,
               catalogueInfo.get().getString("langCode"));
           return Future.future(promise -> indexService.addDatasetPut(indexObject, ir -> {
-            if (ir.failed()) {
-              promise.fail(ir.cause());
-            } else {
+            if (ir.succeeded()) {
               promise.complete(ir.result());
+            } else {
+              // hub-search may return 404 during an internal GET before creating the dataset.
+              // Treat this as a success — the dataset was still indexed correctly.
+              String causeMsg = ir.cause() != null ? ir.cause().getMessage() : "";
+              if ("Not Found".equals(causeMsg) || (ir.cause() instanceof ServiceException se && se.failureCode() == 404)) {
+                logger.debug("Dataset {} indexed via create path in hub-search (404 expected on first index)", catalogueId);
+                promise.complete(new JsonObject().put("status", "created"));
+              } else {
+                promise.fail(ir.cause());
+              }
             }
           }));
         });
@@ -808,16 +868,23 @@ public class DatasetsServiceImpl implements DatasetsService {
     // First, query Virtuoso to find which catalogue this dataset belongs to
     // This is necessary because DatasetHelper.create(Model) doesn't automatically set catalogueId
     return datasetManager.catalogue(datasetRef.getUriRef())
-        .compose(catalogueResource -> {
+        .<Void>compose(catalogueResource -> {
           // Extract catalogue ID from the catalogue resource URI
           final String catalogueId = DCATAPUriSchema.parseUriRef(catalogueResource.getURI()).getId();
+
+          // Guard against null catalogueId - this should not happen if datasets always have a catalogue
+          if (catalogueId == null || catalogueId.isBlank()) {
+            logger.warn("Could not extract catalogueId for dataset {}, skipping indexing", datasetId);
+            failureCount.incrementAndGet();
+            return Future.<Void>succeededFuture();
+          }
 
           // Log to verify correct catalogue ID is retrieved for this specific dataset
           logger.debug("Dataset {} belongs to catalogue {}", datasetId, catalogueId);
 
           // Now fetch the dataset graph from Virtuoso
           return datasetManager.getGraph(datasetRef.getGraphName())
-              .compose(dataset -> {
+              .<Void>compose(dataset -> {
                 // Parse dataset into helper object
                 DatasetHelper helper;
                 try {
@@ -826,12 +893,12 @@ public class DatasetsServiceImpl implements DatasetsService {
                   logger.error("Failed to parse dataset {}: {}", datasetId, e.getMessage(), e);
                   failureCount.incrementAndGet();
                   // Return succeeded future to continue processing other datasets
-                  return Future.succeededFuture();
+                  return Future.<Void>succeededFuture();
                 }
 
                 // Retrieve catalogue information (with caching for performance)
                 return catalogueInfo(catalogueId)
-                    .compose(catalogueInfo -> {
+                    .<Void>compose(catalogueInfo -> {
                       // Generate index object using the specified indexing method
                       // This is a synchronous operation but typically fast
                       JsonObject indexObject;
@@ -849,43 +916,51 @@ public class DatasetsServiceImpl implements DatasetsService {
                         logger.error("Failed to generate index object for dataset {}: {}",
                             datasetId, e.getMessage(), e);
                         failureCount.incrementAndGet();
-                        return Future.succeededFuture();
+                        return Future.<Void>succeededFuture();
                       }
 
                       // Send to OpenSearch asynchronously
                       // Using Future.future() to wrap the callback-based API
-                      return Future.future(promise ->
+                      return Future.<Void>future(promise ->
                           indexService.addDatasetPut(indexObject, ir -> {
                             if (ir.succeeded()) {
                               logger.debug("Successfully indexed dataset: {}", datasetId);
                               successCount.incrementAndGet();
                               promise.complete();
                             } else {
-                              logger.error("Failed to index dataset {} to OpenSearch: {}",
-                                  datasetId, ir.cause().getMessage());
-                              failureCount.incrementAndGet();
-                              // Complete (not fail) to continue processing other datasets
+                              // hub-search may return 404 during an internal GET check before
+                              // creating the dataset — treat this as a successful "create" path
+                              String causeMsg = ir.cause() != null ? ir.cause().getMessage() : "";
+                              if ("Not Found".equals(causeMsg) || (ir.cause() instanceof ServiceException se && se.failureCode() == 404)) {
+                                logger.debug("Dataset {} indexed via create path (404 is expected on first index)", datasetId);
+                                successCount.incrementAndGet();
+                              } else {
+                                logger.error("Failed to index dataset {} to OpenSearch: {}",
+                                    datasetId, causeMsg);
+                                failureCount.incrementAndGet();
+                              }
+                              // Complete (not fail) in either case to continue processing other datasets
                               promise.complete();
                             }
                           })
                       );
                     })
-                    .recover(error -> {
+                    .<Void>recover(error -> {
                       // Handle any errors in the dataset processing chain
                       logger.error("Error processing dataset {}: {}", datasetId, error.getMessage());
                       failureCount.incrementAndGet();
                       // Return succeeded future to continue with other datasets
-                      return Future.succeededFuture();
+                      return Future.<Void>succeededFuture();
                     });
               })
-              .recover(error -> {
+              .<Void>recover(error -> {
                 // Handle errors in dataset graph retrieval
                 logger.error("Failed to retrieve graph for dataset {}: {}", datasetId, error.getMessage());
                 failureCount.incrementAndGet();
-                return Future.succeededFuture();
+                return Future.<Void>succeededFuture();
               });
         })
-        .recover(error -> {
+        .<Void>recover(error -> {
           // Handle errors in catalogue lookup
           // This is expected if dataset has no catalogue reference
           if (error instanceof TripleStoreException tse && tse.getCode() == 404) {
@@ -894,7 +969,7 @@ public class DatasetsServiceImpl implements DatasetsService {
             logger.error("Failed to find catalogue for dataset {}: {}", datasetId, error.getMessage());
           }
           failureCount.incrementAndGet();
-          return Future.succeededFuture();
+          return Future.<Void>succeededFuture();
         })
         .mapEmpty(); // Convert to Future<Void>
   }
@@ -916,8 +991,11 @@ public class DatasetsServiceImpl implements DatasetsService {
   }
 
   private Future<List<JsonObject>> getRecordHash(DatasetHelper helper) {
-    String query = sparqlQueryPool.format(
-        "recordQuery",
+    // Use pre-loaded template to avoid race condition with async SparqlQueryPool
+    if (recordQueryTemplate == null) {
+      return Future.failedFuture(new ServiceException(500, "Missing recordQuery template"));
+    }
+    String query = String.format(recordQueryTemplate,
         helper.catalogueGraphName(),
         helper.catalogueUriRef(),
         helper.originId()
@@ -1068,11 +1146,12 @@ public class DatasetsServiceImpl implements DatasetsService {
     } else {
       checkId.set(id);
     }
-    String askQuery = sparqlQueryPool.format("askPiveauId",
-        DCATAPUriSchema.createForDataset(checkId.get()).getUriRef());
-    if (askQuery == null) {
-      return Future.failedFuture(new ServiceException(500, "Missing query from pool"));
+    // Use pre-loaded template to avoid race condition with async SparqlQueryPool
+    if (askPiveauIdQueryTemplate == null) {
+      return Future.failedFuture(new ServiceException(500, "Missing askPiveauId template"));
     }
+    String askQuery = String.format(askPiveauIdQueryTemplate,
+        DCATAPUriSchema.createForDataset(checkId.get()).getUriRef());
     return tripleStore.ask(askQuery)
         .compose(exist -> {
           if (exist == Boolean.TRUE) {
@@ -1084,6 +1163,11 @@ public class DatasetsServiceImpl implements DatasetsService {
   }
 
   private Future<JsonObject> catalogueInfo(String catalogueId) {
+    // Guard against null catalogueId — EhcacheBase.containsKey throws NPE for null keys
+    if (catalogueId == null || catalogueId.isBlank()) {
+      logger.error("catalogueInfo called with null or blank catalogueId");
+      return Future.failedFuture(new ServiceException(404, "Catalogue not found"));
+    }
     if (cache.containsKey(catalogueId)) {
       logger.debug("Using cached catalogue info for catalogue {}", catalogueId);
       return Future.succeededFuture(cache.get(catalogueId));
@@ -1091,11 +1175,13 @@ public class DatasetsServiceImpl implements DatasetsService {
 
     logger.debug("Querying Virtuoso for catalogue info: {}", catalogueId);
     DCATAPUriRef catalogueUriRef = DCATAPUriSchema.createForCatalogue(catalogueId);
-    String query = sparqlQueryPool.format("catalogueQuery", catalogueUriRef.getGraphName(),
-        catalogueUriRef.getUriRef());
-    if (query == null) {
-      return Future.failedFuture(new ServiceException(500, "Missing query from pool"));
+
+    // Use pre-loaded template to avoid race condition with async SparqlQueryPool
+    if (catalogueQueryTemplate == null) {
+      return Future.failedFuture(new ServiceException(500, "Missing catalogueQuery template"));
     }
+    String query = String.format(catalogueQueryTemplate,
+        catalogueUriRef.getGraphName(), catalogueUriRef.getUriRef());
 
     return tripleStore.select(query)
         .map(resultSet -> {

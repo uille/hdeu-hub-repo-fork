@@ -17,10 +17,8 @@ package io.piveau.openapi
 
 import io.piveau.RDFMimeTypesEnum
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
-import io.piveau.rdf.asString
 import io.piveau.rdf.presentAs
 import io.piveau.test.MockTripleStore
 import io.piveau.utils.dcatap.dsl.catalogue
@@ -58,6 +56,8 @@ class CatalogueDatasetsAPITest {
     private val apikey = "test-api-key"
 
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
 
     private val testCatalogue = catalogue("test-catalogue") {
         title { "Test catalogue" lang "en" }
@@ -80,6 +80,9 @@ class CatalogueDatasetsAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(
@@ -87,15 +90,27 @@ class CatalogueDatasetsAPITest {
                     .put(apikey, JsonArray().add("*"))
                     .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue"))
             )
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue.uri, testCatalogue.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue.id}")
+                    .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue.model.presentAs(Lang.NTRIPLES)))
+            }
             .onSuccess {
-                testContext.completeNow()
+                if (it.statusCode() == 201 || it.statusCode() == 204) {
+                    testContext.completeNow()
+                } else {
+                    testContext.failNow("Failed to create test catalogue: ${it.statusCode()} ${it.statusMessage()} ${it.bodyAsString()}")
+                }
             }
             .onFailure(testContext::failNow)
     }
@@ -112,7 +127,7 @@ class CatalogueDatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.getAbs("$serviceAddress/${testCatalogue.id}/datasets")
+        val request = client.getAbs("$baseUrl/catalogues/${testCatalogue.id}/datasets")
             .addQueryParam("valueType", "metadata")
 
         accept?.let { request.putHeader(HttpHeaders.ACCEPT.toString(), it.value) }
@@ -142,7 +157,7 @@ class CatalogueDatasetsAPITest {
         val expected = accept ?: RDFMimeTypesEnum.JSONLD
         val expectedContentType = "${expected.value}; charset=${expected.charset}"
 
-        val request = client.headAbs("$serviceAddress/${testCatalogue.id}/datasets")
+        val request = client.headAbs("$baseUrl/catalogues/${testCatalogue.id}/datasets")
             .addQueryParam("valueType", "metadata")
 
         accept?.let { request.putHeader(HttpHeaders.ACCEPT.toString(), it.value) }
@@ -161,15 +176,10 @@ class CatalogueDatasetsAPITest {
     }
 
     @ParameterizedTest
-    @ValueSource(
-        strings = [
-            "uriRefs",
-            "identifiers",
-            "originalIds"]
-    )
+    @ValueSource(strings = ["uriRefs", "identifiers", "originalIds"])
     @Order(6)
     fun `Test list datasets with value types`(valueType: String, vertx: Vertx, testContext: VertxTestContext) {
-        client.getAbs("$serviceAddress/${testCatalogue.id}/datasets")
+        client.getAbs("$baseUrl/catalogues/${testCatalogue.id}/datasets")
             .addQueryParam("valueType", valueType)
             .send()
             .onSuccess {
@@ -187,7 +197,7 @@ class CatalogueDatasetsAPITest {
     @Test
     @Order(7)
     fun `Test list datasets of catalogue 400 response`(vertx: Vertx, testContext: VertxTestContext) {
-        client.getAbs("$serviceAddress/${testCatalogue.id}/datasets")
+        client.getAbs("$baseUrl/catalogues/${testCatalogue.id}/datasets")
             .addQueryParam("offset", "first")
             .send()
             .onSuccess {
@@ -206,7 +216,7 @@ class CatalogueDatasetsAPITest {
     @Test
     @Order(8)
     fun `Test list datasets of catalogue 404 response`(vertx: Vertx, testContext: VertxTestContext) {
-        client.getAbs("$serviceAddress/fail-catalogue/datasets")
+        client.getAbs("$baseUrl/catalogues/fail-catalogue/datasets")
             .send()
             .onSuccess {
                 testContext.verify {
@@ -219,11 +229,7 @@ class CatalogueDatasetsAPITest {
     }
 
     @ParameterizedTest
-    @CsvSource(
-        "invalidApiKey,401",
-        "noPermissionsApiKey,403",
-        "test-api-key,201"
-    )
+    @CsvSource("invalidApiKey,401", "noPermissionsApiKey,403", "test-api-key,201")
     @Order(1)
     fun `Test add dataset to catalogue`(
         apiKey: String,
@@ -231,7 +237,7 @@ class CatalogueDatasetsAPITest {
         vertx: Vertx,
         testContext: VertxTestContext
     ) {
-        client.postAbs("$serviceAddress/${testCatalogue.id}/datasets")
+        client.postAbs("$baseUrl/catalogues/${testCatalogue.id}/datasets")
             .putHeader("X-API-Key", apiKey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
@@ -255,7 +261,7 @@ class CatalogueDatasetsAPITest {
     @Test
     @Order(2)
     fun `Test add dataset to catalogue 400 response`(vertx: Vertx, testContext: VertxTestContext) {
-        client.postAbs("$serviceAddress/${testCatalogue.id}/datasets")
+        client.postAbs("$baseUrl/catalogues/${testCatalogue.id}/datasets")
             .putHeader("X-API-Key", apikey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .send()
@@ -272,7 +278,7 @@ class CatalogueDatasetsAPITest {
     @Test
     @Order(3)
     fun `Test add dataset to catalogue 404 response`(vertx: Vertx, testContext: VertxTestContext) {
-        client.postAbs("$serviceAddress/fail-catalogue/datasets")
+        client.postAbs("$baseUrl/catalogues/fail-catalogue/datasets")
             .putHeader("X-API-Key", apikey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
             .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
@@ -286,8 +292,18 @@ class CatalogueDatasetsAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/catalogues"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
+    companion object
 
 }

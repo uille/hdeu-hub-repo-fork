@@ -124,9 +124,12 @@ class CatalogueHelperTest {
 
   @Test
   void ctor_throws_whenLanguageMissing() {
+    // The constructor no longer throws; validation is the API layer's responsibility.
+    // CatalogueHelper.validateSingleLanguageAndSpatial() is the method that enforces the rule.
+    CatalogueHelper helper = new CatalogueHelper("cat-bad", "text/turtle", TTL_NO_LANG);
     IllegalArgumentException ex = assertThrows(
         IllegalArgumentException.class,
-        () -> new CatalogueHelper("cat-bad", "text/turtle", TTL_NO_LANG)
+        () -> CatalogueHelper.validateSingleLanguageAndSpatial(helper.resource())
     );
     assertTrue(ex.getMessage().contains("exactly one dct:language"),
         "error mentions single language/spatial constraint");
@@ -134,9 +137,11 @@ class CatalogueHelperTest {
 
   @Test
   void ctor_throws_whenLanguageDuplicated() {
+    // The constructor no longer throws; validation is the API layer's responsibility.
+    CatalogueHelper helper = new CatalogueHelper("cat-bad2", "text/turtle", TTL_DUP_LANG);
     IllegalArgumentException ex = assertThrows(
         IllegalArgumentException.class,
-        () -> new CatalogueHelper("cat-bad2", "text/turtle", TTL_DUP_LANG)
+        () -> CatalogueHelper.validateSingleLanguageAndSpatial(helper.resource())
     );
     assertTrue(ex.getMessage().contains("exactly one dct:language"),
         "error mentions single language/spatial constraint");

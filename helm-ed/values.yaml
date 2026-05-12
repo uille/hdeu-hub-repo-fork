@@ -35,6 +35,14 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+## Deployment strategy configuration
+## ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+## @param deploymentStrategy Defines the deployment strategy for rolling updates. If not set, defaults to RollingUpdate with maxUnavailable and maxSurge set to 25%.
+deploymentStrategy: {}
+# Example:
+# deploymentStrategy:
+#   type: Recreate
+
 ## HDEU Hub Repo Service Account
 ## ref: https://kubernetes.io/docs/concepts/security/service-accounts/
 ## @param serviceAccount.create Specifies whether a service account should be created
@@ -117,8 +125,7 @@ containerPort: 8080
 ## @param config.HUB_REPO_HEALTH_CATEGORIES_VOCABULARY_BASE_URL URL for accessing the Health Categories vocabulary.
 ## @param config.ITB_VALIDATOR_ENDPOINT Endpoint URL for the ITB RDF Validator service.
 ##
-config:
-  {}
+config: {}
   # Example:
   # JAVA_OPTS: -Xms300m -Xmx1g
   # TRANSLATION_SERVICE_URL: https://www.url.eu/translation-service/
@@ -174,17 +181,17 @@ aws:
     # List of AWS Secrets Manager objects to be mounted via the CSI driver.
     # Each object defines its name, type, and the specific secret keys (via jmesPath) to extract.
     objects: []
-  # Maps environment variable names to the corresponding secret keys from the mounted Kubernetes secret,
-  # used to populate container environment variables.
-  envSecretsMap: {}
+
+# Maps environment variable names to the corresponding secret keys from the mounted Kubernetes secret,
+# used to populate container environment variables.
+envSecretsMap: {}
 
 ## HDEU HUB REPO configuration that stored in a Secret
 configJson:
   ## @param PIVEAU_HUB_SERVICE_PORT The port on which the HDEU hub repo is running
   PIVEAU_HUB_SERVICE_PORT: 8080
   ## @param PIVEAU_HUB_CORS_DOMAINS The list of domains that are allowed to access the HDEU hub repo
-  PIVEAU_HUB_CORS_DOMAINS:
-    []
+  PIVEAU_HUB_CORS_DOMAINS: []
     # Example:
   # PIVEAU_HUB_CORS_DOMAINS: ["http://hdeu-hub-ui.example.com", "localhost", "example.com"]
   greeting: "You know, for metadata!"
@@ -338,11 +345,38 @@ ingress:
         port: 9080
   tls: []
 
+## Probes configuration (Deployment)
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+## @param livenessProbe Liveness probe configuration for the hub-repo deployment
+## @param readinessProbe Readiness probe configuration for the hub-repo deployment
+## @param startupProbe Startup probe configuration for the hub-repo deployment
+##
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 60
+  timeoutSeconds: 60
+  failureThreshold: 6
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  timeoutSeconds: 60
+  periodSeconds: 60
+  failureThreshold: 3
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  failureThreshold: 30
+  timeoutSeconds: 2
+  periodSeconds: 10
+
 ## Resources configuration
 ## ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 ##
-resources:
-  {}
+resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
@@ -362,31 +396,34 @@ resources:
 ## @param autoscaling.maxReplicas Maximum number of replicas allowed to handle high traffic.
 ## @param autoscaling.targetCPUUtilizationPercentage CPU utilization threshold for scaling. When exceeded, more replicas are created.
 ## @param autoscaling.targetMemoryUtilizationPercentage Memory utilization threshold for scaling (optional, uncomment to enable).
+## @param autoscaling.behavior.scaleDown.stabilizationWindowSeconds Seconds to wait before acting on scale-down decisions.
+## @param autoscaling.behavior.scaleDown.pods Number of pods to remove per periodSeconds.
+## @param autoscaling.behavior.scaleDown.periodSeconds Time window in seconds for the scale-down policy.
 ##
 autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
+  # targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      pods: 1
+      periodSeconds: 60
 
 ## @section Virtuoso
 #
 virtuoso:
   image:
     repository: openlink/virtuoso-opensource-7
-    tag: latest
+    tag: "7.2.16"
   ## Image Pull Policies
   ## ref: https://kubernetes.io/docs/concepts/containers/images/
   ##
   imagePullPolicy: IfNotPresent
   replicaCount: 1
-  ## Deployment strategy.
-  ## ref: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#update-strategies
-  ## - "Recreate": Deletes the old pod before creating a new one (useful for stateful applications).
-  ## - "RollingUpdate": Gradually replaces old pods with new ones, ensuring zero downtime.
-  ##
-  strategy: RollingUpdate
+
   ## Virtuoso service parameters
   ## ref: https://kubernetes.io/docs/concepts/services-networking/service/
   ## @param virtuoso.service.port.service Port exposed by the Kubernetes service
@@ -403,10 +440,42 @@ virtuoso:
   containerPort:
     service: 8890
     default: 1111
-  ## @param virtuoso.dbaPassword Password for the DBA user (should be set for security)
-  ## if aws.enabled is true, the password will be retrieved from AWS Secrets Manager
+  ## Virtuoso Probes configuration
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+  ## @param virtuoso.startupProbe Startup probe configuration for the virtuoso statefulset
+  ## @param virtuoso.readinessProbe Readiness probe configuration for the virtuoso statefulset
+  ## @param virtuoso.livenessProbe Liveness probe configuration for the virtuoso statefulset
   ##
-  dbaPassword:
+  startupProbe:
+    httpGet:
+      path: /sparql?query=ASK%20%7B%7D&format=text%2Fplain
+      port: 8890
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 30
+  readinessProbe:
+    httpGet:
+      path: /sparql?query=ASK%20%7B%7D&format=text%2Fplain
+      port: 8890
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  livenessProbe:
+    tcpSocket:
+      port: 8890
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  ## Virtuoso environment variables
+  env: []
+  # - name: ENV_VAR_NAME
+  #   value: "value"
+
+  # Maps environment variable names to the corresponding secret keys from the mounted Kubernetes secret,
+  # used to populate container environment variables.
+  envSecretsMap: {}
   ## Virtuoso Persistence Storage
   ## ref: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
   ## @param virtuoso.persistence.size Virtuoso Persistent Volume Size
@@ -455,18 +524,13 @@ virtuoso:
 shadowVirtuoso:
   image:
     repository: openlink/virtuoso-opensource-7
-    tag: latest
+    tag: "7.2.16"
   ## Image Pull Policies
   ## ref: https://kubernetes.io/docs/concepts/containers/images/
   ##
   imagePullPolicy: IfNotPresent
   replicaCount: 1
-  ## Deployment strategy.
-  ## ref: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#update-strategies
-  ## - "Recreate": Deletes the old pod before creating a new one (useful for stateful applications).
-  ## - "RollingUpdate": Gradually replaces old pods with new ones, ensuring zero downtime.
-  ##
-  strategy: RollingUpdate
+
   ## Shadow Virtuoso service parameters
   ## ref: https://kubernetes.io/docs/concepts/services-networking/service/
   ## @param shadowVirtuoso.service.port.service Port exposed by the Kubernetes service
@@ -483,9 +547,42 @@ shadowVirtuoso:
   containerPort:
     service: 8890
     default: 1111
-  ## @param shadowVirtuoso.dbaPassword Password for the DBA user (should be set for security)
+  ## Shadow Virtuoso Probes configuration
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+  ## @param shadowVirtuoso.startupProbe Startup probe configuration for the shadow virtuoso statefulset
+  ## @param shadowVirtuoso.readinessProbe Readiness probe configuration for the shadow virtuoso statefulset
+  ## @param shadowVirtuoso.livenessProbe Liveness probe configuration for the shadow virtuoso statefulset
   ##
-  dbaPassword: "dba"
+  startupProbe:
+    httpGet:
+      path: /sparql?query=ASK%20%7B%7D&format=text%2Fplain
+      port: 8890
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 30
+  readinessProbe:
+    httpGet:
+      path: /sparql?query=ASK%20%7B%7D&format=text%2Fplain
+      port: 8890
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  livenessProbe:
+    tcpSocket:
+      port: 8890
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  ## Shadow Virtuoso environment variables
+  env: []
+  # - name: ENV_VAR_NAME
+  #   value: "value"
+
+  # Maps environment variable names to the corresponding secret keys from the mounted Kubernetes secret,
+  # used to populate container environment variables.
+  envSecretsMap: {}
   ## Shadow Virtuoso Persistence Storage
   ## ref: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
   ## @param shadowVirtuoso.persistence.size Virtuoso Persistent Volume Size

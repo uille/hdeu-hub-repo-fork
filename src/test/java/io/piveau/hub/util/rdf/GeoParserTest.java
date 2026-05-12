@@ -52,6 +52,18 @@ class GeoParserTest {
     assertThrows(GeoParsingException.class, () -> parser.WKTtoGeoJSON(wkt));
   }
 
+  @Test
+  void wktToGeoJson_polygon_ok() throws Exception {
+    String wkt = "POLYGON((13.66 52.89,13.83 52.89,13.83 52.79, 13.66 52.79,13.66 52.89))";
+    String expected = "{\n" +
+        "  \"type\" : \"Polygon\",\n" +
+        "  \"coordinates\" : [ [ [ 13.66, 52.89 ], [ 13.83, 52.89 ], [ 13.83, 52.79 ], [ 13.66, 52.79 ], [ 13.66, 52.89 ] ] ]\n" +
+        "}";
+    JsonObject json = parser.WKTtoGeoJSON(wkt);
+    assertNotNull(json);
+    assertEquals(new JsonObject(expected), json);
+  }
+
   // -------------- GML2toGeoJSON --------------
 
   @Test
@@ -101,6 +113,21 @@ class GeoParserTest {
     assertEquals(10.0, env.getMinY(), 1e-9);
     assertEquals(40.0, env.getMaxX(), 1e-9);
     assertEquals(30.0, env.getMaxY(), 1e-9);
+  }
+
+  @Test
+  void gml3ToGeoJson_gmlPrefixedEnvelope_ok() throws Exception {
+    String gml3 = "<gml:Envelope srsName=\"http://www.opengis.net/def/EPSG/0/4326\">" +
+        "<gml:lowerCorner>53.1485 12.915</gml:lowerCorner>" +
+        "<gml:upperCorner>53.1985 12.9983</gml:upperCorner>" +
+        "</gml:Envelope>";
+    String expected = "{\n" +
+        "  \"type\" : \"Polygon\",\n" +
+        "  \"coordinates\" : [ [ [ 12.915, 53.1485 ], [ 12.915, 53.1985 ], [ 12.9983, 53.1985 ], [ 12.9983, 53.1485 ], [ 12.915, 53.1485 ] ] ]\n" +
+        "}";
+    JsonObject json = parser.GML3toGeoJSON(gml3);
+    assertNotNull(json);
+    assertEquals(new JsonObject(expected), json);
   }
 
   @Test

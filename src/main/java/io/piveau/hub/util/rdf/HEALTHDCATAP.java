@@ -39,6 +39,7 @@ public class HEALTHDCATAP {
     public static final Property hasCodingSystem = m.createProperty(NS + "hasCodingSystem");
     public static final Property hasCodeValues = m.createProperty(NS + "hasCodeValues");
     public static final Property healthTheme = m.createProperty(NS + "healthTheme");
+    public static final Property hasVariables = m.createProperty(NS + "hasVariables");
 
     public HEALTHDCATAP() {
     }

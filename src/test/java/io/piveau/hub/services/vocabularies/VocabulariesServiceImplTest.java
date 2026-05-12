@@ -19,7 +19,6 @@ import static io.piveau.rdf.RDFMimeTypes.NTRIPLES;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -49,6 +48,7 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.VertxExtension;
+import io.vertx.junit5.VertxTestContext;
 import io.vertx.serviceproxy.ServiceException;
 import java.nio.file.Files;
 import java.util.List;
@@ -467,7 +467,7 @@ class VocabulariesServiceImplTest {
   }
 
   @Test
-  void putVocabulary_parseError_failsWith500() throws Exception {
+  void putVocabulary_parseError_failsWith500(VertxTestContext testContext) {
     Future<String> fut = vocabulariesService.putVocabulary(
         "v1",
         "http://example/vocab",
@@ -475,17 +475,17 @@ class VocabulariesServiceImplTest {
         "BAD"
     );
 
-    try {
-      fut.toCompletionStage().toCompletableFuture().get(2, TimeUnit.SECONDS);
-      fail("Expected failure");
-    } catch (ExecutionException ee) {
-      Throwable cause = ee.getCause();
-      assertInstanceOf(ServiceException.class, cause);
-      var se = (ServiceException) cause;
-      assertEquals(500, se.failureCode());
-      assertTrue(se.getMessage().contains("Out of place"));
-      assertTrue(se.getMessage().contains("KEYWORD:BAD"));
-    }
+    fut.onComplete(ar -> {
+      testContext.verify(() -> {
+        assertTrue(ar.failed(), "Expected future to fail");
+        assertInstanceOf(ServiceException.class, ar.cause());
+        var se = (ServiceException) ar.cause();
+        assertEquals(500, se.failureCode());
+        assertTrue(se.getMessage().contains("Out of place"));
+        assertTrue(se.getMessage().contains("KEYWORD:BAD"));
+      });
+      testContext.completeNow();
+    });
   }
 
   // ---------------- putVocabularyChunk ----------------

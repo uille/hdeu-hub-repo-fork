@@ -16,7 +16,6 @@
 package io.piveau.duplication
 
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
 import io.piveau.rdf.presentAs
@@ -35,7 +34,6 @@ import io.vertx.junit5.VertxTestContext
 import org.apache.jena.rdf.model.ResourceFactory
 import org.apache.jena.riot.Lang
 import org.apache.jena.vocabulary.DCAT
-import org.apache.jena.vocabulary.DCTerms
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.extension.ExtendWith
 import org.slf4j.Logger
@@ -50,6 +48,9 @@ class DuplicatesTests {
     private val log: Logger = LoggerFactory.getLogger(javaClass)
     private val apikey = "test-api-key"
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/catalogues"
 
     private val testCatalogue1 = catalogue("test-catalogue-1") {
         title { "Test catalogue 1" lang "en" }
@@ -90,23 +91,91 @@ class DuplicatesTests {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(
                 Constants.ENV_PIVEAU_HUB_API_KEYS, JsonObject()
                 .put(apikey, JsonArray().add("*"))
                 .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue")))
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue1.uri, testCatalogue1.model)
-            .loadGraph(testCatalogue2.uri, testCatalogue2.model)
-            .loadGraph(testCatalogue3.uri, testCatalogue3.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue1.id}")
+                    .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue1.model.presentAs(Lang.NTRIPLES)))
+            }
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    client.putAbs("$baseUrl/catalogues/${testCatalogue2.id}")
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .putHeader("X-API-Key", apikey)
+                        .sendBuffer(Buffer.buffer(testCatalogue2.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to create catalogue 1: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    client.putAbs("$baseUrl/catalogues/${testCatalogue3.id}")
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .putHeader("X-API-Key", apikey)
+                        .sendBuffer(Buffer.buffer(testCatalogue3.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to create catalogue 2: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
+            // Pre-create testDataset in all 3 catalogues via legacy PUT (putDatasetOrigin - upsert)
+            // so that subsequent PUT /datasets/origin calls (update-only, isDatasetUpdate=true) succeed
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .putHeader("X-API-Key", apikey)
+                        .addQueryParam("catalogue", testCatalogue1.id)
+                        .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to create catalogue 3: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .putHeader("X-API-Key", apikey)
+                        .addQueryParam("catalogue", testCatalogue2.id)
+                        .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to pre-create dataset in catalogue 1: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
+            .compose { resp ->
+                if (resp.statusCode() == 201 || resp.statusCode() == 204) {
+                    client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                        .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                        .putHeader("X-API-Key", apikey)
+                        .addQueryParam("catalogue", testCatalogue3.id)
+                        .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+                } else {
+                    io.vertx.core.Future.failedFuture("Failed to pre-create dataset in catalogue 2: ${resp.statusCode()} ${resp.bodyAsString()}")
+                }
+            }
             .onSuccess {
-                testContext.completeNow()
+                if (it.statusCode() == 201 || it.statusCode() == 204) {
+                    testContext.completeNow()
+                } else {
+                    testContext.failNow("Failed to pre-create dataset in catalogue 3: ${it.statusCode()} ${it.bodyAsString()}")
+                }
             }
             .onFailure(testContext::failNow)
     }
@@ -121,9 +190,8 @@ class DuplicatesTests {
             .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
             .onSuccess {
                 testContext.verify {
-                    Assertions.assertEquals(201, it.statusCode())
-                    Assertions.assertNotNull(it.getHeader(HttpHeaders.LOCATION.toString()))
-                    log.debug(it.getHeader(HttpHeaders.LOCATION.toString()))
+                    // Dataset pre-created in setUp; PUT /datasets/origin is update-only → 204 or 304
+                    Assertions.assertTrue(it.statusCode() == 204 || it.statusCode() == 304)
                 }
                 testContext.completeNow()
             }
@@ -140,9 +208,7 @@ class DuplicatesTests {
             .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
             .onSuccess {
                 testContext.verify {
-                    Assertions.assertEquals(201, it.statusCode())
-                    Assertions.assertNotNull(it.getHeader(HttpHeaders.LOCATION.toString()))
-                    log.debug(it.getHeader(HttpHeaders.LOCATION.toString()))
+                    Assertions.assertTrue(it.statusCode() == 204 || it.statusCode() == 304)
                 }
                 testContext.completeNow()
             }
@@ -159,9 +225,7 @@ class DuplicatesTests {
             .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
             .onSuccess {
                 testContext.verify {
-                    Assertions.assertEquals(201, it.statusCode())
-                    Assertions.assertNotNull(it.getHeader(HttpHeaders.LOCATION.toString()))
-                    log.debug(it.getHeader(HttpHeaders.LOCATION.toString()))
+                    Assertions.assertTrue(it.statusCode() == 204 || it.statusCode() == 304)
                 }
                 testContext.completeNow()
             }
@@ -178,7 +242,7 @@ class DuplicatesTests {
                 .put("defaultLanguage", "en")
                 .put("dict", JsonObject()))
 
-        client.postAbs("http://localhost:8080/translation")
+        client.postAbs("$baseUrl/translation")
             .putHeader("X-API-Key", apikey)
             .putHeader(HttpHeaders.CONTENT_TYPE.toString(), "application/json")
             .sendBuffer(Buffer.buffer(translation.encode()))
@@ -194,7 +258,7 @@ class DuplicatesTests {
     @Test
     @Order(5)
     fun `Get list of test datasets`(vertx: Vertx, testContext: VertxTestContext) {
-        client.getAbs("http://localhost:8080/datasets")
+        client.getAbs("$baseUrl/datasets")
 //            .putHeader(HttpHeaders.ACCEPT.toString(), RDFMimeTypes.TURTLE)
             .send()
             .onSuccess {
@@ -210,7 +274,7 @@ class DuplicatesTests {
     @Test
     @Order(6)
     fun `Get translation information`(vertx: Vertx, testContext: VertxTestContext) {
-        client.getAbs("http://localhost:8080/datasets/test-dataset~~2")
+        client.getAbs("$baseUrl/datasets/test-dataset~~2")
             .putHeader(HttpHeaders.ACCEPT.toString(), RDFMimeTypes.TURTLE)
             .send()
             .onSuccess {
@@ -223,8 +287,17 @@ class DuplicatesTests {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/catalogues"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
 
 }

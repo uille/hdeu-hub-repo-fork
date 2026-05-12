@@ -166,12 +166,6 @@ data:
             pv:mappingClass "Keywords" ;
             pv:mappingName "keywords"
         ], [
-            sh:maxCount 1 ;
-            sh:path dct:publisher ;
-            sh:severity sh:Violation ;
-            pv:mappingClass "Agent" ;
-            pv:mappingName "publisher"
-        ], [
             sh:path dct:spatial ;
             sh:severity sh:Violation ;
             pv:mappingClass "Spatial" ;
@@ -228,11 +222,6 @@ data:
             pv:mappingClass "DateTime" ;
             pv:mappingName "modified"
         ], [
-    #          sh:path dct:provenance ;
-    #          sh:severity sh:Violation ;
-    #          pv:mappingClass "LabeledResource" ;
-    #          pv:mappingName "provenance"
-    #      ], [
             sh:nodeKind sh:BlankNodeOrIRI ;
             sh:path dct:relation ;
             sh:severity sh:Violation ;
@@ -267,14 +256,7 @@ data:
             sh:severity sh:Violation ;
             pv:mappingClass "AdmsIdentifier" ;
             pv:mappingName "adms_identifier"
-        ],
-    #        [
-    #          sh:path dcat:landingPage ;
-    #          sh:severity sh:Violation ;
-    #          pv:mappingClass "LabeledResource" ;
-    #          pv:mappingName "landing_page"
-    #      ],
-            [
+        ], [
             sh:path foaf:page ;
             sh:severity sh:Violation ;
             pv:mappingClass "Page" ;
@@ -295,14 +277,7 @@ data:
             sh:severity sh:Violation ;
             pv:mappingClass "StandardResourceKeyword" ;
             pv:mappingName "qualified_attribution"
-        ],
-    #         [
-    #          sh:path prov:wasGeneratedBy ;
-    #          sh:severity sh:Violation ;
-    #          pv:mappingClass "StandardKeyword" ;
-    #          pv:mappingName "was_generated_by"
-    #      ],
-        [
+        ], [
             sh:datatype xsd:duration ;
             sh:maxCount 1 ;
             sh:path dcat:temporalResolution ;
@@ -453,14 +428,7 @@ data:
             sh:severity sh:Violation ;
             pv:mappingClass "DateRange" ;
             pv:mappingName "retention_period"
-        ], [
-            sh:maxCount 1 ;
-            sh:path healthdcatap:hdab ;
-            sh:severity sh:Violation ;
-            pv:mappingClass "Agent" ;
-            pv:mappingName "hdab"
-        ],
-            [
+        ],  [
             sh:path healthdcatap:analytics ;
             sh:severity sh:Violation ;
             pv:mappingClass "Nested" ;
@@ -482,15 +450,19 @@ data:
             sh:severity sh:Violation ;
             pv:mappingClass "StandardResourceKeyword" ;
             pv:mappingName "health_category"
-        ],
-            [
+        ],  [
+            sh:minCount 1 ;
+            sh:maxCount 1 ;
+            sh:path healthdcatap:hasStructuredData ;
+            pv:mappingClass "Boolean" ;
+            pv:mappingName "hasStructuredData"
+        ],  [
             sh:path adms:sample ;
             sh:severity sh:Violation ;
             pv:mappingClass "Nested" ;
             pv:mappingName "distributions_sample" ;
             pv:mappingLink dcatap:Distribution_Shape ;
-        ],
-            [
+        ], [
             sh:path dpv:hasPersonalData ;
             sh:severity sh:Violation ;
             pv:mappingClass "StandardResourceKeyword" ;

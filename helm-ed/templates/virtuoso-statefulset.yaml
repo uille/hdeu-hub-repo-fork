@@ -19,10 +19,15 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "piveau-hub-repo.virtuosoName" . }}
+  name: {{ include "piveau-hub-repo.virtuosoName" . }}-t
   labels:
     {{- include "piveau-hub-repo.virtuosoLabels" . | nindent 4 }}
 spec:
+  updateStrategy:
+    type: {{ if .Values.virtuoso.strategy }}{{ .Values.virtuoso.strategy }}{{ else }}RollingUpdate{{ end }}
+    {{- if and .Values.virtuoso.strategy (ne .Values.virtuoso.strategy "RollingUpdate") }}
+    rollingUpdate: null
+    {{- end }}
   selector:
     matchLabels:
       {{- include "piveau-hub-repo.virtuosoSelectorLabels" . | nindent 6 }}
@@ -39,33 +44,47 @@ spec:
           image: "{{ .Values.virtuoso.image.repository }}:{{ .Values.virtuoso.image.tag }}"
           imagePullPolicy: {{ .Values.virtuoso.imagePullPolicy }}
           ports:
-            - containerPort: {{ .Values.virtuoso.service.port.default }}
+            - containerPort: {{ .Values.virtuoso.containerPort.default }}
               name: default
               protocol: TCP
-            - containerPort: {{ .Values.virtuoso.service.port.service }}
+            - containerPort: {{ .Values.virtuoso.containerPort.service }}
               name: service
               protocol: TCP
           {{- if .Values.virtuoso.resources }}
-          resources: {{ toYaml .Values.virtuoso.resources | nindent 12 }}
+          resources:
+            {{- toYaml .Values.virtuoso.resources | nindent 12 }}
           {{- end }}
+          startupProbe:
+            {{- toYaml .Values.virtuoso.startupProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.virtuoso.readinessProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.virtuoso.livenessProbe | nindent 12 }}
           # This env section allows us to set environment variables to the value of a key from a Kubernetes secret or a value from the values file
           env:
           # Conditional block - If the deployment is to take place in an AWS environment
           {{- if .Values.aws.enabled }}
-            - name: DBA_PASSWORD
+          {{- $rootChart := . }}
+          {{- range $envName, $secretKey := .Values.virtuoso.envSecretsMap }}
+            - name: {{ $envName }}
               valueFrom:
                 secretKeyRef:
-                  key: dba_password
-                  name: {{ include "piveau-hub-repo.name" . }}-secrets
+                  key: {{ $secretKey }}
+                  name: {{ include "piveau-hub-repo.name" $rootChart }}-secrets
+          {{- end }}
           # Conditional block - If the deployment is to take place in a non-AWS environment
           {{- else }}
-            - name: DBA_PASSWORD
-              value: {{ .Values.virtuoso.dbaPassword }}
+          {{- with .Values.virtuoso.env }}
+          {{- range . }}
+            - name: {{ .name }}
+              value: {{ tpl .value $ | quote }}
+          {{- end }}
+          {{- end }}
           {{- end }}
           # This volumeMounts section mounts the virtuoso-data volume to the container under the /database directory or mounts the secret-volume to the container under the /etc/piveau-hub-repo-secrets directory
           volumeMounts:
-            - mountPath: /data
-              name: virtuoso
+            - mountPath: /database
+              name: data
           # Conditional block - If the deployment is to take place in an AWS environment
           {{- if .Values.aws.enabled }}
             - name: {{ include "piveau-hub-repo.name" . }}-secrets
@@ -85,7 +104,7 @@ spec:
   # This volumes section defines the virtuoso-data volume as a persistent volume claim
   volumeClaimTemplates:
     - metadata:
-        name: virtuoso
+        name: data
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

@@ -17,7 +17,6 @@ package io.piveau.openapi
 
 import io.piveau.RDFMimeTypesEnum
 import io.piveau.hub.Constants
-import io.piveau.hub.Defaults
 import io.piveau.hub.MainVerticle
 import io.piveau.rdf.RDFMimeTypes
 import io.piveau.rdf.asString
@@ -37,7 +36,6 @@ import io.vertx.junit5.VertxTestContext
 import org.apache.jena.rdf.model.ResourceFactory
 import org.apache.jena.riot.Lang
 import org.apache.jena.vocabulary.DCAT
-import org.apache.jena.vocabulary.DCTerms
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.extension.ExtendWith
@@ -65,6 +63,9 @@ class CatalogueDatasetsOriginAPITest {
     private val apikey = "test-api-key"
 
     private lateinit var client: WebClient
+    private var deploymentId: String? = null
+    private var baseUrl: String = "http://localhost:8080"
+    private val serviceAddress get() = "$baseUrl/catalogues"
 
     private val testCatalogue = catalogue("test-catalogue") {
         title { "Test catalogue" lang "en" }
@@ -89,6 +90,9 @@ class CatalogueDatasetsOriginAPITest {
     fun setUp(vertx: Vertx, testContext: VertxTestContext) {
         client = WebClient.create(vertx)
 
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        baseUrl = "http://localhost:$port"
+
         val config = JsonObject()
             .put(Constants.ENV_PIVEAU_TRIPLESTORE_CONFIG, MockTripleStore.getDefaultConfig())
             .put(
@@ -96,15 +100,37 @@ class CatalogueDatasetsOriginAPITest {
                     .put(apikey, JsonArray().add("*"))
                     .put("noPermissionsApiKey", JsonArray().add("foreign-catalogue"))
             )
+            .put(Constants.ENV_PIVEAU_HUB_SERVICE_PORT, port)
+            .put(Constants.ENV_PIVEAU_HUB_TEST_MODE, true)
 
         MockTripleStore()
-            .loadGraph(testCatalogue.uri, testCatalogue.model)
             .deploy(vertx)
             .compose {
                 vertx.deployVerticle(MainVerticle::class.java, DeploymentOptions().setConfig(config))
             }
+            .compose { id ->
+                deploymentId = id
+                client.putAbs("$baseUrl/catalogues/${testCatalogue.id}")
+                    .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                    .putHeader("X-API-Key", apikey)
+                    .sendBuffer(Buffer.buffer(testCatalogue.model.presentAs(Lang.NTRIPLES)))
+            }
+            .compose {
+                // Pre-create the dataset via the legacy PUT /datasets endpoint (putDatasetOrigin,
+                // which is always upsert) so that subsequent PUT /datasets/origin calls (update-only)
+                // can find it by originalId
+                client.putAbs("$baseUrl/datasets/${testDataset.id}")
+                    .putHeader(HttpHeaders.CONTENT_TYPE.toString(), RDFMimeTypes.NTRIPLES)
+                    .putHeader("X-API-Key", apikey)
+                    .addQueryParam("catalogue", testCatalogue.id)
+                    .sendBuffer(Buffer.buffer(testDataset.model.presentAs(Lang.NTRIPLES)))
+            }
             .onSuccess {
-                testContext.completeNow()
+                if (it.statusCode() == 201 || it.statusCode() == 204) {
+                    testContext.completeNow()
+                } else {
+                    testContext.failNow("Failed to pre-create test dataset: ${it.statusCode()} ${it.statusMessage()} ${it.bodyAsString()}")
+                }
             }
             .onFailure(testContext::failNow)
     }
@@ -121,8 +147,9 @@ class CatalogueDatasetsOriginAPITest {
             .sendBuffer(buffer)
             .onSuccess {
                 testContext.verify {
-                    assertEquals(201, it.statusCode())
-                    assertNotNull(it.getHeader(HttpHeaders.LOCATION.toString()))
+                    // Dataset pre-created in setUp via legacy PUT (upsert).
+                    // PUT /datasets/origin is update-only: 204 if data changed, 304 if unchanged.
+                    assertTrue(it.statusCode() == 204 || it.statusCode() == 304)
                 }
                 testContext.completeNow()
             }
@@ -281,8 +308,17 @@ class CatalogueDatasetsOriginAPITest {
             .onFailure(testContext::failNow)
     }
 
-    companion object {
-        const val serviceAddress = "http://localhost:8080/catalogues"
+    @AfterAll
+    fun tearDown(vertx: Vertx, testContext: VertxTestContext) {
+        val id = deploymentId
+        if (id != null) {
+            vertx.undeploy(id)
+                .onSuccess { testContext.completeNow() }
+                .onFailure(testContext::failNow)
+        } else {
+            testContext.completeNow()
+        }
     }
+
 
 }

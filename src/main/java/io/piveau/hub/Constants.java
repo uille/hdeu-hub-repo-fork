@@ -26,6 +26,10 @@ public final class Constants {
   public static final String ENV_PIVEAU_HTTP_BODY_LIMIT = "PIVEAU_HTTP_BODY_LIMIT";
 
   public static final String ENV_PIVEAU_HUB_SERVICE_PORT = "PIVEAU_HUB_SERVICE_PORT";
+  /** When set to {@code true} in the deployment config, the verticle uses an ephemeral port (0)
+   *  and publishes the resolved port to {@code vertx.sharedData().getLocalMap("piveau.hub.test")}.
+   *  Must never be set in production deployments. */
+  public static final String ENV_PIVEAU_HUB_TEST_MODE = "PIVEAU_HUB_TEST_MODE";
   public static final String ENV_PIVEAU_HUB_API_KEY = "PIVEAU_HUB_API_KEY";
   public static final String ENV_PIVEAU_HUB_API_KEYS = "PIVEAU_HUB_API_KEYS";
   public static final String ENV_PIVEAU_HUB_AUTHORIZATION_PROCESS_DATA = "PIVEAU_HUB_AUTHORIZATION_PROCESS_DATA";

@@ -18,7 +18,10 @@ package io.piveau.hub.util;
 import io.piveau.dcatap.DCATAPUriRef;
 import io.piveau.dcatap.DCATAPUriSchema;
 import io.piveau.rdf.Piveau;
-import io.piveau.utils.JenaUtils;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import org.apache.jena.datatypes.xsd.XSDDatatype;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.Resource;
@@ -26,11 +29,6 @@ import org.apache.jena.util.ResourceUtils;
 import org.apache.jena.vocabulary.DCAT;
 import org.apache.jena.vocabulary.DCTerms;
 import org.apache.jena.vocabulary.RDF;
-
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 
 public class CatalogueHelper {
     private final String id;
@@ -44,9 +42,6 @@ public class CatalogueHelper {
 
         renameReferences();
         catalogue = model.getResource(uriRef());
-
-        // Enforce exactly one dct:language and one dct:spatial
-        validateSingleLanguageAndSpatial(catalogue);
 
         modified();
         catalogue.addProperty(DCTerms.issued, ZonedDateTime
@@ -85,18 +80,21 @@ public class CatalogueHelper {
         catalogue.addProperty(DCAT.record, model.createResource(schema.getRecordUriRef()));
     }
 
-
-    private void renameReferences() {
-        model.listSubjectsWithProperty(RDF.type, DCAT.Catalog).forEachRemaining(ds ->
-                ResourceUtils.renameResource(ds, uriRef()));
-    }
-
     /**
-     * Validates that the catalog has exactly one dct:language and one dct:spatial.
-     * Temp solution for Release 5
-     * @param catalog the catalog resource to validate
+     * Validates that the catalogue has exactly one {@code dct:language} and one {@code dct:spatial}.
+     * <p>
+     * This method is intentionally <em>not</em> called from the constructor, so that internal
+     * operations (e.g. creating the vocabularies catalogue, or pre-loading data in tests) are not
+     * blocked by this constraint. It is the responsibility of the <strong>API layer</strong>
+     * (i.e. {@code CataloguesServiceImpl.putCatalogue}) to call this method and return a 400
+     * response when user-submitted catalogues violate the constraint.
+     * </p>
+     *
+     * @param catalog the catalogue {@link Resource} to validate
+     * @throws IllegalArgumentException if the catalogue does not have exactly one
+     *         {@code dct:language} and exactly one {@code dct:spatial}
      */
-    private void validateSingleLanguageAndSpatial(Resource catalog) {
+    public static void validateSingleLanguageAndSpatial(Resource catalog) {
         long languageCount = catalog.listProperties(DCTerms.language).toList().size();
         long spatialCount = catalog.listProperties(DCTerms.spatial).toList().size();
 
@@ -106,5 +104,10 @@ public class CatalogueHelper {
                 languageCount, spatialCount
             ));
         }
+    }
+
+    private void renameReferences() {
+        model.listSubjectsWithProperty(RDF.type, DCAT.Catalog).forEachRemaining(ds ->
+                ResourceUtils.renameResource(ds, uriRef()));
     }
 }

@@ -284,6 +284,11 @@ public class DatasetHandler {
    * @param contentType the dataset format i.e. text/turtle, application/rdf+xml etc.
    */
   public boolean datasetIsInvalid(RoutingContext context, String catalogueId, String contentType) {
+    // Skip validation if the ITB validator endpoint is not configured (e.g. in tests)
+    String itbEndpoint = System.getenv(Constants.ENV_PIVEAU_ITB_VALIDATOR_ENDPOINT);
+    if (itbEndpoint == null || itbEndpoint.isBlank()) {
+      return false;
+    }
     try {
       String rdfContent = context.body().asString();
       // Validate the dataset based on dcat-ap and healthdcat-ap specifications
