@@ -261,7 +261,7 @@ public class DatasetHandler {
       return;
     }
 
-    datasetsService.putDatasetOriginHealthData(originId, content, contentType, catalogueId, false, true)
+    datasetsService.putDatasetOriginHealthData(originId, content, contentType, catalogueId, false, false)
         .onSuccess(status -> {
           switch (status.getString(RESULT_STATUS_KEY)) {
             case RESULT_STATUS_CREATED -> context.response().setStatusCode(201)
